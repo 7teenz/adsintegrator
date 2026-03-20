@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-bg: #f4f7fb;
+  --app-text: #0f172a;
+  --app-muted: #64748b;
+  --card-bg: #ffffff;
+  --card-border: #e2e8f0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  color: var(--app-text);
+  background:
+    radial-gradient(circle at 8% 4%, rgba(14, 165, 233, 0.16), transparent 28%),
+    radial-gradient(circle at 88% 2%, rgba(250, 204, 21, 0.14), transparent 24%),
+    var(--app-bg);
+  font-family: "Manrope", "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.bg-app {
+  background:
+    radial-gradient(circle at 12% 6%, rgba(14, 165, 233, 0.14), transparent 22%),
+    radial-gradient(circle at 90% 4%, rgba(251, 191, 36, 0.12), transparent 18%),
+    var(--app-bg);
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+main > * {
+  animation: rise-in 320ms ease-out;
+}
