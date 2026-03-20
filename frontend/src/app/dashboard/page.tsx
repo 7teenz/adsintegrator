@@ -64,14 +64,24 @@ export default function DashboardPage() {
 
   const executiveSummary = useMemo(() => {
     if (!report) return "Upload a Meta Ads export to generate your first executive audit.";
-    if (report.findings_count === 0) return "The latest audit did not detect major issues. Use the full report to review supporting evidence and scope.";
-    if (report.health_score >= 75) return "The account looks broadly healthy, but there are still a few concentrated leaks worth fixing.";
-    if (report.health_score >= 55) return "The audit found meaningful inefficiencies. Fixing the top issues should improve efficiency quickly.";
+    if (report.findings_count === 0) {
+      return "The latest audit did not detect major issues. Use the full report to review supporting evidence and scope.";
+    }
+    if (report.health_score >= 75) {
+      return "The account looks broadly healthy, but there are still a few concentrated leaks worth fixing.";
+    }
+    if (report.health_score >= 55) {
+      return "The audit found meaningful inefficiencies. Fixing the top issues should improve efficiency quickly.";
+    }
     return "The latest audit shows multiple costly issues. This account needs active cleanup, not just monitoring.";
   }, [report]);
 
   if (loading) {
-    return <div className="flex justify-center py-20"><Spinner label="Loading dashboard..." /></div>;
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner label="Loading dashboard..." />
+      </div>
+    );
   }
 
   if (needsSetup) {
@@ -80,7 +90,9 @@ export default function DashboardPage() {
         <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">Upload first</p>
           <h1 className="mt-3 text-3xl font-semibold text-slate-900">
-            {user?.full_name ? `${user.full_name}, upload your Meta Ads history to generate the first audit` : "Upload your Meta Ads history to generate the first audit"}
+            {user?.full_name
+              ? `${user.full_name}, upload your Meta Ads history to generate the first audit`
+              : "Upload your Meta Ads history to generate the first audit"}
           </h1>
           <p className="mt-3 max-w-2xl text-sm text-slate-600">
             This local MVP is built around uploaded Meta Ads exports. Import a CSV or XLSX report, then run an audit to unlock the executive dashboard.
@@ -96,7 +108,11 @@ export default function DashboardPage() {
       <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
         <div className="flex items-center justify-between gap-4">
           <p className="text-sm text-rose-700">{error}</p>
-          <button type="button" onClick={() => void load()} className="text-sm font-semibold text-rose-700 underline">
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="text-sm font-semibold text-rose-700 underline"
+          >
             Retry
           </button>
         </div>
@@ -114,7 +130,10 @@ export default function DashboardPage() {
           <p className="mt-3 max-w-2xl text-sm text-slate-600">
             Import a Meta Ads export, review the import quality, and run your first audit to unlock the executive dashboard and full report.
           </p>
-          <Link href="/dashboard/audits" className="mt-5 inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+          <Link
+            href="/dashboard/audits"
+            className="mt-5 inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
             Open audit page
           </Link>
         </section>
@@ -133,16 +152,30 @@ export default function DashboardPage() {
         </h1>
         <p className="mt-3 max-w-3xl text-sm text-slate-600">{executiveSummary}</p>
         <div className="mt-5 flex flex-wrap gap-3 text-xs text-slate-500">
-          <span className="rounded-full bg-slate-100 px-3 py-1">{report.campaign_count} campaigns · {report.ad_set_count} ad sets · {report.ad_count} ads</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1">{formatDate(report.analysis_start)} to {formatDate(report.analysis_end)} · {days} days</span>
-          <span className="rounded-full bg-sky-50 px-3 py-1 text-sky-700">Confidence: {confidence?.confidenceLabel}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1">{isAggregateMode ? "Aggregate upload" : "Daily trend data available"}</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">
+            {report.campaign_count} campaigns · {report.ad_set_count} ad sets · {report.ad_count} ads
+          </span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">
+            {formatDate(report.analysis_start)} to {formatDate(report.analysis_end)} · {days} days
+          </span>
+          <span className="rounded-full bg-sky-50 px-3 py-1 text-sky-700">
+            Confidence: {confidence?.confidenceLabel}
+          </span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">
+            {isAggregateMode ? "Aggregate upload" : "Daily trend data available"}
+          </span>
         </div>
         <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/dashboard/audits" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+          <Link
+            href="/dashboard/audits"
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
             Open full report
           </Link>
-          <Link href="/dashboard/settings" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+          <Link
+            href="/dashboard/settings"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
             Data controls
           </Link>
         </div>
@@ -182,19 +215,23 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-500">{report.findings_count} findings</p>
           </div>
           <div className="mt-4 space-y-3">
-            {topActions.length > 0 ? topActions.map((action, index) => (
-              <article key={action.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                <div className="flex items-start gap-4">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
-                    {index + 1}
+            {topActions.length > 0 ? (
+              topActions.map((action, index) => (
+                <article key={action.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{action.title}</p>
+                      <p className="mt-1 text-sm text-slate-600">{action.whyItMatters}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{action.title}</p>
-                    <p className="mt-1 text-sm text-slate-600">{action.whyItMatters}</p>
-                  </div>
-                </div>
-              </article>
-            )) : <p className="text-sm text-slate-500">No urgent actions were triggered in the latest run.</p>}
+                </article>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">No urgent actions were triggered in the latest run.</p>
+            )}
           </div>
         </div>
 
@@ -264,7 +301,10 @@ export default function DashboardPage() {
             <h3 className="text-sm font-semibold text-slate-900">Recommended next move</h3>
             <p className="mt-1 text-xs text-slate-500">Use the full report to inspect evidence, grouped findings, and audit history.</p>
           </div>
-          <Link href="/dashboard/audits" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+          <Link
+            href="/dashboard/audits"
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
             Open full report
           </Link>
         </div>

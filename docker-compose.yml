@@ -68,7 +68,6 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
-    command: sh -lc "npm run build && node .next/standalone/server.js"
     ports:
       - "3000:3000"
     env_file:

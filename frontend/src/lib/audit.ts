@@ -171,13 +171,24 @@ export interface DerivedTopAction {
   title: string;
   whyItMatters: string;
   impactValue: number;
+  severity: string;
+  entityName: string;
+  category: string;
+  metricValue: number | null;
+  thresholdValue: number | null;
 }
 
 export interface DerivedBiggestLeak {
+  id: string;
   title: string;
   description: string;
   waste: number;
+  uplift: number;
   entityName: string;
+  severity: string;
+  category: string;
+  metricValue: number | null;
+  thresholdValue: number | null;
 }
 
 export function formatCurrency(value: number): string {
@@ -186,6 +197,20 @@ export function formatCurrency(value: number): string {
 
 export function formatPercent(value: number): string {
   return `${value.toFixed(2)}%`;
+}
+
+export function formatFindingMetric(value: number, category: string): string {
+  const normalized = category.toLowerCase();
+  if (category === "PERFORMANCE" || normalized.includes("ctr") || normalized.includes("conversion")) {
+    return `${(value * 100).toFixed(2)}%`;
+  }
+  if (category === "BUDGET" || normalized.includes("spend") || normalized.includes("cpa") || normalized.includes("cpc") || normalized.includes("cpm")) {
+    return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  }
+  if (category === "FREQUENCY") {
+    return `${value.toFixed(2)}x`;
+  }
+  return value.toFixed(2);
 }
 
 export function formatDate(value: string): string {
@@ -251,7 +276,10 @@ export function deriveConfidence(
 }
 
 export function deriveTopActions(report: AuditReport): DerivedTopAction[] {
-  const recommendationMap = new Map(report.recommendations.map((item) => [item.recommendation_key, item]));
+  const recommendationByFindingId = new Map(
+    report.recommendations.flatMap((item) => (item.audit_finding_id ? [[item.audit_finding_id, item]] : [])),
+  );
+  const recommendationByKey = new Map(report.recommendations.map((item) => [item.recommendation_key, item]));
   const rankedFindings = [...report.findings].sort((a, b) => {
     const aImpact = a.estimated_waste + a.estimated_uplift + a.score_impact * 100;
     const bImpact = b.estimated_waste + b.estimated_uplift + b.score_impact * 100;
@@ -259,7 +287,9 @@ export function deriveTopActions(report: AuditReport): DerivedTopAction[] {
   });
 
   return rankedFindings.slice(0, 3).map((finding) => {
-    const recommendation = finding.recommendation_key ? recommendationMap.get(finding.recommendation_key) : undefined;
+    const recommendation =
+      recommendationByFindingId.get(finding.id) ||
+      (finding.recommendation_key ? recommendationByKey.get(finding.recommendation_key) : undefined);
     return {
       id: finding.id,
       title: recommendation?.title || finding.title,
@@ -268,6 +298,11 @@ export function deriveTopActions(report: AuditReport): DerivedTopAction[] {
         finding.description ||
         "This issue is large enough to meaningfully affect efficiency if it stays unresolved.",
       impactValue: finding.estimated_waste + finding.estimated_uplift,
+      severity: finding.severity,
+      entityName: finding.entity_name || finding.affected_entity,
+      category: finding.category,
+      metricValue: finding.metric_value,
+      thresholdValue: finding.threshold_value,
     };
   });
 }
@@ -276,9 +311,15 @@ export function deriveBiggestLeak(report: AuditReport): DerivedBiggestLeak | nul
   if (!report.findings.length) return null;
   const finding = [...report.findings].sort((a, b) => (b.estimated_waste + b.estimated_uplift) - (a.estimated_waste + a.estimated_uplift))[0];
   return {
+    id: finding.id,
     title: finding.title,
     description: finding.description,
     waste: finding.estimated_waste,
+    uplift: finding.estimated_uplift,
     entityName: finding.entity_name || finding.affected_entity,
+    severity: finding.severity,
+    category: finding.category,
+    metricValue: finding.metric_value,
+    thresholdValue: finding.threshold_value,
   };
 }

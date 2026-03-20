@@ -36,7 +36,7 @@ export function AISummaryBlock({ summary, report, onRegenerate, regenerating }: 
         </div>
         <div className="flex items-center gap-2">
           <span
-            title={`Provider: ${summary.provider} | Model: ${summary.model} | Status: ${summary.status}`}
+            title="AI interpretation uses the latest structured audit findings as source data."
             className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 text-xs text-slate-500"
           >
             i

@@ -7,7 +7,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { apiFetch } from "@/lib/api";
 import { clearAuth, setAuth, type User } from "@/lib/auth";
-import { PlanProvider } from "@/lib/plan";
 
 export default function DashboardLayout({
   children,
@@ -42,21 +41,19 @@ export default function DashboardLayout({
   }
 
   return (
-    <PlanProvider>
-      <div className="min-h-screen bg-app">
-        <div className="mx-auto flex w-full max-w-[1500px]">
-          <Sidebar />
-          <main className="min-h-screen flex-1 px-4 py-6 sm:px-6 lg:px-10">
-            <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
-              <p className="text-sm font-semibold text-slate-900">Meta Audit</p>
-              <Link href="/dashboard/settings" className="text-xs font-semibold text-slate-600">
-                Settings
-              </Link>
-            </div>
-            {children}
-          </main>
-        </div>
+    <div className="min-h-screen bg-app">
+      <div className="mx-auto flex w-full max-w-[1500px]">
+        <Sidebar />
+        <main className="min-h-screen flex-1 px-4 py-6 sm:px-6 lg:px-10">
+          <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
+            <p className="text-sm font-semibold text-slate-900">Meta Audit</p>
+            <Link href="/dashboard/settings" className="text-xs font-semibold text-slate-600">
+              Settings
+            </Link>
+          </div>
+          {children}
+        </main>
       </div>
-    </PlanProvider>
+    </div>
   );
 }

@@ -40,12 +40,69 @@ Tie statements only to values in INPUT.
 
 ACTION_TEMPLATE = """
 Write a prioritized action plan with 3-6 actions.
-Each action should include: priority level, what to do, why it matters.
+Each action should include:
+- priority level
+- what to do
+- affected entity
+- actual metric and threshold if provided
+- why it matters in business terms
+- what to inspect next
+Every action must reference the specific finding that triggered it.
 No guaranteed outcomes. No invented numbers.
 """.strip()
 
 
 class AISummaryService:
+    GENERIC_ACTION_PLAN_PHRASES = (
+        "address critical and high-severity findings first",
+        "prioritize opportunities with the largest estimated uplift",
+        "re-run sync and audit",
+        "address high-severity findings first",
+    )
+
+    @staticmethod
+    def _extract_json_text(text: str) -> str:
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.strip("`")
+            if cleaned.lower().startswith("json"):
+                cleaned = cleaned[4:].strip()
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return cleaned[start : end + 1]
+        return cleaned
+
+    @staticmethod
+    def _stringify_value(value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, list):
+            lines: list[str] = []
+            for index, item in enumerate(value, start=1):
+                if isinstance(item, str):
+                    text = item.strip()
+                elif isinstance(item, dict):
+                    label = item.get("title") or item.get("action") or item.get("priority") or item.get("summary")
+                    detail = item.get("why") or item.get("reason") or item.get("details") or item.get("description")
+                    text = " - ".join(part for part in [label, detail] if isinstance(part, str) and part.strip())
+                else:
+                    text = str(item).strip()
+                if text:
+                    lines.append(f"{index}. {text}" if len(value) > 1 else text)
+            return "\n".join(lines).strip()
+        if isinstance(value, dict):
+            lines = []
+            for key, item in value.items():
+                rendered = AISummaryService._stringify_value(item)
+                if rendered:
+                    label = str(key).replace("_", " ").strip().capitalize()
+                    lines.append(f"{label}: {rendered}")
+            return "\n".join(lines).strip()
+        if value is None:
+            return ""
+        return str(value).strip()
+
     @staticmethod
     def _severity_rank(level: str) -> int:
         order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
@@ -59,17 +116,28 @@ class AISummaryService:
             limitations.append("This audit was generated from an aggregate imported report rather than daily time-series data.")
             limitations.append("Trend and anomaly interpretations are limited for this run.")
 
+        recommendation_by_finding_id = {
+            item.audit_finding_id: item
+            for item in run.recommendations
+            if item.audit_finding_id
+        }
+
         findings = sorted(
             [
                 {
+                    "finding_id": item.id,
                     "rule_id": item.rule_id,
                     "severity": item.severity,
                     "category": item.category,
                     "title": item.title,
                     "description": item.description,
                     "entity_name": item.entity_name,
+                    "metric_value": item.metric_value,
+                    "threshold_value": item.threshold_value,
                     "estimated_waste": item.estimated_waste,
                     "estimated_uplift": item.estimated_uplift,
+                    "linked_recommendation_title": recommendation_by_finding_id.get(item.id).title if recommendation_by_finding_id.get(item.id) else None,
+                    "linked_recommendation_body": recommendation_by_finding_id.get(item.id).body if recommendation_by_finding_id.get(item.id) else None,
                 }
                 for item in run.findings
             ],
@@ -109,7 +177,84 @@ class AISummaryService:
         }
 
     @staticmethod
-    def _fallback_output(payload: dict[str, Any], reason: str | None = None) -> dict[str, str]:
+    def _format_metric_for_summary(value: Any, category: str) -> str | None:
+        if value is None:
+            return None
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        normalized = category.lower()
+        if category == "PERFORMANCE" or "ctr" in normalized or "conversion" in normalized:
+            return f"{numeric * 100:.2f}%"
+        if category in {"BUDGET", "CPA", "SPEND"} or any(token in normalized for token in ("spend", "cpa", "cpc", "cpm")):
+            return f"${numeric:.2f}"
+        if category == "FREQUENCY":
+            return f"{numeric:.2f}x"
+        return f"{numeric:.2f}"
+
+    @staticmethod
+    def _clean_sentence(text: str | None, fallback: str) -> str:
+        value = (text or "").strip()
+        if not value:
+            return fallback
+        value = " ".join(value.split())
+        value = value.rstrip(".")
+        return f"{value}."
+
+    @staticmethod
+    def _title_case_severity(level: str | None) -> str:
+        value = (level or "").strip().lower()
+        if not value:
+            return "Priority"
+        return value.capitalize()
+
+    @classmethod
+    def _fallback_action_plan(cls, payload: dict[str, Any]) -> str:
+        findings = payload.get("findings", [])[:3]
+        if not findings:
+            return (
+                "1. Confirm the imported report covers at least 30 days with daily rows.\n"
+                "2. Review the dashboard evidence to verify where efficiency is breaking.\n"
+                "3. Re-run the audit after the next data refresh to compare the account health score."
+            )
+
+        actions: list[str] = []
+        for index, item in enumerate(findings, start=1):
+            severity = cls._title_case_severity(item.get("severity"))
+            entity_name = item.get("entity_name") or "the affected entity"
+            actual = cls._format_metric_for_summary(item.get("metric_value"), item.get("category", ""))
+            threshold = cls._format_metric_for_summary(item.get("threshold_value"), item.get("category", ""))
+            metric_text = ""
+            if actual and threshold:
+                metric_text = f"Actual is {actual} versus the threshold of {threshold}."
+            elif actual:
+                metric_text = f"Actual is {actual}."
+
+            inspect_next = "Inspect the relevant campaign setup, creative, landing page, and tracking path next."
+            recommendation_body = item.get("linked_recommendation_body") or ""
+            if "landing" in recommendation_body.lower():
+                inspect_next = "Inspect the landing page, offer alignment, and tracking path next."
+            elif "creative" in recommendation_body.lower():
+                inspect_next = "Inspect creative fatigue, hooks, and audience-message fit next."
+            elif "budget" in recommendation_body.lower() or "reallocate" in recommendation_body.lower():
+                inspect_next = "Inspect budget allocation across sibling campaigns and ad sets next."
+
+            recommendation_title = item.get("linked_recommendation_title") or item.get("title") or "Review this issue"
+            why_it_matters = cls._clean_sentence(
+                item.get("description"),
+                "This issue is directly reducing account efficiency.",
+            )
+            action_intro = f"{index}. {severity}: {recommendation_title} on {entity_name}."
+            metric_clause = f" {metric_text}" if metric_text else ""
+            actions.append(
+                f"{action_intro}{metric_clause} Why it matters: {why_it_matters} Next step: {inspect_next}"
+            )
+        return "\n".join(actions)
+
+    @classmethod
+    def _fallback_output(cls, payload: dict[str, Any], reason: str | None = None) -> dict[str, str]:
+
         findings = payload.get("findings", [])
         top = findings[:3]
         top_lines = []
@@ -127,26 +272,59 @@ class AISummaryService:
                 f" The audit surfaced {payload['findings_count']} deterministic findings.{limitation_note}"
             ),
             "detailed_audit_explanation": "\n".join(top_lines) if top_lines else "No findings were provided in this audit input.",
-            "prioritized_action_plan": (
-                "1. Address critical and high-severity findings first.\n"
-                "2. Prioritize opportunities with the largest estimated uplift.\n"
-                "3. Re-run sync and audit after changes to verify deterministic improvement."
-            ),
+            "prioritized_action_plan": cls._fallback_action_plan(payload),
         }
 
-    @staticmethod
-    def _validate_output(data: dict[str, Any]) -> dict[str, str]:
-        required = [
-            "short_executive_summary",
-            "detailed_audit_explanation",
-            "prioritized_action_plan",
-        ]
+    @classmethod
+    def _action_plan_is_generic(cls, value: str) -> bool:
+        normalized = value.lower().strip()
+        if not normalized:
+            return True
+        if len(normalized) < 60:
+            return True
+        if "next step:" not in normalized and "why it matters:" not in normalized:
+            return True
+        return any(phrase in normalized for phrase in cls.GENERIC_ACTION_PLAN_PHRASES)
+
+    @classmethod
+    def _normalize_output(cls, data: dict[str, Any], payload: dict[str, Any]) -> dict[str, str]:
+        fallback = cls._fallback_output(payload)
+        aliases: dict[str, list[str]] = {
+            "short_executive_summary": [
+                "short_executive_summary",
+                "executive_summary",
+                "summary",
+                "short_summary",
+                "overview",
+            ],
+            "detailed_audit_explanation": [
+                "detailed_audit_explanation",
+                "detailed_explanation",
+                "analysis",
+                "why_performance_is_slipping",
+                "detailed_summary",
+                "findings_explanation",
+            ],
+            "prioritized_action_plan": [
+                "prioritized_action_plan",
+                "action_plan",
+                "prioritized_actions",
+                "top_actions",
+                "recommendations",
+                "next_actions",
+            ],
+        }
+
         cleaned: dict[str, str] = {}
-        for key in required:
-            value = data.get(key)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"Missing or invalid summary field: {key}")
-            cleaned[key] = value.strip()
+        for canonical_key, candidates in aliases.items():
+            value = ""
+            for candidate in candidates:
+                value = cls._stringify_value(data.get(candidate))
+                if value:
+                    break
+            cleaned[canonical_key] = value or fallback[canonical_key]
+        if cls._action_plan_is_generic(cleaned["prioritized_action_plan"]):
+            cleaned["prioritized_action_plan"] = cls._fallback_action_plan(payload)
         return cleaned
 
     @classmethod
@@ -203,8 +381,8 @@ class AISummaryService:
             data = with_http_retries(_send, max_attempts=settings.ai_max_retries + 1)
 
         content = data["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-        return cls._validate_output(parsed)
+        parsed = json.loads(cls._extract_json_text(content))
+        return cls._normalize_output(parsed, payload)
 
     @classmethod
     def _anthropic_request(cls, payload: dict[str, Any], api_key: str) -> dict[str, str]:
@@ -243,8 +421,8 @@ class AISummaryService:
             data = with_http_retries(_send, max_attempts=settings.ai_max_retries + 1)
 
         text_blocks = [item.get("text", "") for item in data.get("content", []) if item.get("type") == "text"]
-        parsed = json.loads("".join(text_blocks).strip())
-        return cls._validate_output(parsed)
+        parsed = json.loads(cls._extract_json_text("".join(text_blocks).strip()))
+        return cls._normalize_output(parsed, payload)
 
     @classmethod
     def _gemini_request(cls, payload: dict[str, Any], api_key: str) -> dict[str, str]:
@@ -293,8 +471,8 @@ class AISummaryService:
             .get("parts", [])
         )
         text = "".join(part.get("text", "") for part in parts).strip()
-        parsed = json.loads(text)
-        return cls._validate_output(parsed)
+        parsed = json.loads(cls._extract_json_text(text))
+        return cls._normalize_output(parsed, payload)
 
     @classmethod
     def _generate_with_retries(cls, payload: dict[str, Any]) -> dict[str, str]:
