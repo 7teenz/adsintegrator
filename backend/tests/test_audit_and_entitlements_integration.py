@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+
+from app.tasks.audit import _run_audit_job
 from tests.helpers import (
     auth_header_for_user,
     create_user,
@@ -7,7 +10,16 @@ from tests.helpers import (
 )
 
 
-def test_run_audit_and_get_latest(client, db_session):
+def _patch_audit_delay(monkeypatch):
+    def _delay(audit_run_id: str):
+        _run_audit_job(audit_run_id, "test-audit-task")
+        return SimpleNamespace(id="test-audit-task")
+
+    monkeypatch.setattr("app.routes.audit.run_audit_job.delay", _delay)
+
+
+def test_run_audit_and_get_latest(client, db_session, monkeypatch):
+    _patch_audit_delay(monkeypatch)
     user = create_user(db_session, "audit@example.com")
     account = seed_connected_account(db_session, user)
     seed_audit_data(db_session, account)
@@ -16,12 +28,16 @@ def test_run_audit_and_get_latest(client, db_session):
     run_resp = client.post("/api/audit/run", headers=headers)
     assert run_resp.status_code == 201, run_resp.text
     payload = run_resp.json()
-    assert payload["id"]
-    assert "health_score" in payload
+    assert payload["job_id"]
+    assert payload["status"] == "pending"
+
+    job = client.get(f"/api/audit/job/{payload['job_id']}", headers=headers)
+    assert job.status_code == 200
+    assert job.json()["status"] == "completed"
 
     latest = client.get("/api/audit/latest", headers=headers)
     assert latest.status_code == 200
-    assert latest.json()["id"] == payload["id"]
+    assert latest.json()["id"] == payload["job_id"]
 
 
 def test_free_vs_premium_findings_limit(client, db_session):
@@ -42,7 +58,8 @@ def test_free_vs_premium_findings_limit(client, db_session):
     assert len(premium_findings.json()) == 5
 
 
-def test_imported_history_can_run_audit_and_generate_ai_summary(client, db_session):
+def test_imported_history_can_run_audit_and_generate_ai_summary(client, db_session, monkeypatch):
+    _patch_audit_delay(monkeypatch)
     user = create_user(db_session, "import-audit@example.com")
     headers = auth_header_for_user(user.id)
 
@@ -64,14 +81,13 @@ def test_imported_history_can_run_audit_and_generate_ai_summary(client, db_sessi
     run_resp = client.post("/api/audit/run", headers=headers)
     assert run_resp.status_code == 201, run_resp.text
     payload = run_resp.json()
-    assert payload["id"]
-    assert payload["health_score"] >= 0
+    assert payload["job_id"]
 
     dashboard = client.get("/api/audit/dashboard", headers=headers)
     assert dashboard.status_code == 200, dashboard.text
     dashboard_payload = dashboard.json()
     assert dashboard_payload["kpis"]["spend"] > 0
-    assert dashboard_payload["audit"]["id"] == payload["id"]
+    assert dashboard_payload["audit"]["id"] == payload["job_id"]
 
     summary = client.get("/api/audit/latest/ai-summary", headers=headers)
     assert summary.status_code == 200, summary.text

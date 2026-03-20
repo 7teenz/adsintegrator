@@ -10,7 +10,7 @@ import { TopOpportunities } from "@/components/dashboard/top-opportunities";
 import { TrendWidget } from "@/components/dashboard/trend-widget";
 import { WorstPerformers } from "@/components/dashboard/worst-performers";
 import { apiFetch } from "@/lib/api";
-import { AuditDashboardData, AuditFinding, MetricSplit, formatCurrency, formatDate } from "@/lib/audit";
+import { AuditDashboardData, AuditFinding, MetricSplit, cleanAiSummaryText, formatCurrency, formatDate } from "@/lib/audit";
 import { getUser } from "@/lib/auth";
 import { usePlan } from "@/lib/plan";
 
@@ -45,15 +45,6 @@ function severityBadgeClass(severity: string): string {
     default:
       return "border-sky-200 bg-sky-50 text-sky-700";
   }
-}
-
-function cleanAggregateAiSummary(text: string | null | undefined): string | null {
-  if (!text) return null;
-
-  return text
-    .replace(/AI generation fallback used \(provider not configured\)\.?/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
 }
 
 function MetricCard({ label, value, tone = "default", note }: { label: string; value: string; tone?: "default" | "danger" | "success"; note?: string }) {
@@ -111,7 +102,7 @@ function AggregateSummaryLayout({
   const highlightFindings = data.top_opportunities.slice(0, 3);
   const primaryRisk = highlightFindings[0];
   const cleanedAiSummary =
-    cleanAggregateAiSummary(report.ai_summary?.short_executive_summary) ||
+    cleanAiSummaryText(report.ai_summary?.short_executive_summary) ||
     "This imported report points to efficiency issues around click quality, conversion output, and budget concentration. The full report expands those findings into deterministic recommendations.";
   const summaryCards = [
     {
@@ -495,7 +486,7 @@ export default function DashboardPage() {
       {report.ai_summary ? (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">AI Explanation Preview</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-700">{report.ai_summary.short_executive_summary}</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-700">{cleanAiSummaryText(report.ai_summary.short_executive_summary) || report.ai_summary.short_executive_summary}</p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Link href="/dashboard/audits" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
               Open full AI report

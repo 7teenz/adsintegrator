@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, FileBarChart, Settings, LogOut, Sparkles } from "lucide-react";
 
+import { apiFetch } from "@/lib/api";
 import { clearAuth, getUser } from "@/lib/auth";
 import { usePlan } from "@/lib/plan";
 import { UpgradeCta } from "@/components/billing/upgrade-cta";
@@ -20,9 +21,14 @@ export function Sidebar() {
   const user = getUser();
   const { plan, isPremium } = usePlan();
 
-  const handleLogout = () => {
-    clearAuth();
-    router.push("/");
+  const handleLogout = async () => {
+    try {
+      await apiFetch<{ message: string }>("/auth/logout", { method: "POST", noAuth: true });
+    } finally {
+      clearAuth();
+      router.push("/");
+      router.refresh();
+    }
   };
 
   return (

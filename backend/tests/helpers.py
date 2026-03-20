@@ -13,7 +13,7 @@ from app.services.auth import create_access_token, hash_password
 
 
 def create_user(db: Session, email: str = "user@example.com", password: str = "secret123") -> User:
-    user = User(email=email, hashed_password=hash_password(password), full_name="Test User")
+    user = User(email=email, hashed_password=hash_password(password), full_name="Test User", email_verified=True)
     db.add(user)
     db.commit()
     db.refresh(user)

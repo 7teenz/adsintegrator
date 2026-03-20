@@ -1,6 +1,6 @@
 "use client";
 
-import { AuditAISummary } from "@/lib/audit";
+import { AuditAISummary, cleanAiSummaryText } from "@/lib/audit";
 
 interface Props {
   summary: AuditAISummary;
@@ -10,6 +10,10 @@ interface Props {
 }
 
 export function AISummaryBlock({ summary, canViewDetailed, onRegenerate, regenerating }: Props) {
+  const shortSummary = cleanAiSummaryText(summary.short_executive_summary) || summary.short_executive_summary;
+  const detailedSummary = cleanAiSummaryText(summary.detailed_audit_explanation) || summary.detailed_audit_explanation;
+  const actionPlan = cleanAiSummaryText(summary.prioritized_action_plan) || summary.prioritized_action_plan;
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -31,18 +35,18 @@ export function AISummaryBlock({ summary, canViewDetailed, onRegenerate, regener
 
       <article className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
         <h3 className="text-sm font-semibold text-slate-900">Short Executive Summary</h3>
-        <p className="mt-2 text-sm leading-relaxed text-slate-700">{summary.short_executive_summary}</p>
+        <p className="mt-2 text-sm leading-relaxed text-slate-700">{shortSummary}</p>
       </article>
 
       {canViewDetailed ? (
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <article className="rounded-xl border border-slate-100 bg-slate-50 p-4">
             <h3 className="text-sm font-semibold text-slate-900">Detailed Audit Explanation</h3>
-            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{summary.detailed_audit_explanation}</p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{detailedSummary}</p>
           </article>
           <article className="rounded-xl border border-slate-100 bg-slate-50 p-4">
             <h3 className="text-sm font-semibold text-slate-900">Prioritized Action Plan</h3>
-            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{summary.prioritized_action_plan}</p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{actionPlan}</p>
           </article>
         </div>
       ) : (
@@ -53,10 +57,6 @@ export function AISummaryBlock({ summary, canViewDetailed, onRegenerate, regener
           </p>
         </div>
       )}
-
-      {summary.status === "failed" && summary.error_message ? (
-        <p className="mt-3 text-xs text-rose-600">Generation fallback used: {summary.error_message}</p>
-      ) : null}
     </section>
   );
 }

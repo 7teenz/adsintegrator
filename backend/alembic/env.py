@@ -1,4 +1,15 @@
+import sys
+import os
 from logging.config import fileConfig
+
+# Ensure the backend/ directory is on the path so `app` is importable.
+# Inside Docker WORKDIR=/app so __file__ is /app/alembic/env.py → parent is /app.
+# Running locally from backend/ folder → parent of alembic/ is also backend/.
+# Both cases resolve correctly with dirname(dirname(abspath(__file__))).
+_here = os.path.dirname(os.path.abspath(__file__))          # .../alembic/
+_root = os.path.dirname(_here)                               # .../backend/ or /app
+if _root not in sys.path:
+    sys.path.insert(0, _root)
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool

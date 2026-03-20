@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     app_name: str = "Meta Ads Audit API"
+    environment: str = "development"
     debug: bool = False
     database_url: str = "postgresql://postgres:postgres@postgres:5432/meta_ads_audit"
 
@@ -39,6 +40,12 @@ class Settings(BaseSettings):
     ai_timeout_seconds: int = Field(default=45, ge=5, le=180)
     ai_max_retries: int = Field(default=2, ge=0, le=5)
     ai_prompt_version: str = "v1"
+
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "noreply@example.com"
 
     free_max_ad_accounts: int = 1
     free_max_findings: int = 3

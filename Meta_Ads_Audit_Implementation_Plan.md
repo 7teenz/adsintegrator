@@ -59,61 +59,69 @@ Phase 1 status notes:
 
 ## Phase 2: Auth Hardening
 
-- [ ] Move auth from `localStorage` JWTs to `httpOnly` cookies.
+- [x] Move auth from `localStorage` JWTs to `httpOnly` cookies.
   Files: `backend/app/routes/auth.py`, `frontend/src/lib/auth.ts`, `frontend/src/lib/api.ts`
-- [ ] Add a logout endpoint that clears the auth cookie.
+- [x] Add a logout endpoint that clears the auth cookie.
   Files: `backend/app/routes/auth.py`
-- [ ] Update auth dependency resolution to read cookie first and Bearer token as fallback.
+- [x] Update auth dependency resolution to read cookie first and Bearer token as fallback.
   Files: `backend/app/middleware/deps.py`
-- [ ] Add `credentials: 'include'` to frontend API requests.
+- [x] Add `credentials: 'include'` to frontend API requests.
   Files: `frontend/src/lib/api.ts`
-- [ ] Remove frontend token persistence from `localStorage`.
+- [x] Remove frontend token persistence from `localStorage`.
   Files: `frontend/src/lib/auth.ts`
-- [ ] Add `email_verified` and `email_verify_token` fields to the user model.
+- [x] Add `email_verified` and `email_verify_token` fields to the user model.
   Files: `backend/app/models/user.py`, new Alembic migration
-- [ ] Create email delivery helpers for verification and password reset.
+- [x] Create email delivery helpers for verification and password reset.
   Files: `backend/app/services/email.py`
-- [ ] Add register flow email verification handling.
+- [x] Add register flow email verification handling.
   Files: `backend/app/routes/auth.py`, `backend/app/services/auth.py`
-- [ ] Add `GET /auth/verify-email`.
+- [x] Add `GET /auth/verify-email`.
   Files: `backend/app/routes/auth.py`
-- [ ] Add `POST /auth/forgot-password`.
+- [x] Add `POST /auth/forgot-password`.
   Files: `backend/app/routes/auth.py`
-- [ ] Add `POST /auth/reset-password`.
+- [x] Add `POST /auth/reset-password`.
   Files: `backend/app/routes/auth.py`
-- [ ] Block unverified users from accessing protected API routes outside debug mode.
+- [x] Block unverified users from accessing protected API routes outside debug mode.
   Files: `backend/app/middleware/deps.py`
-- [ ] Add SMTP configuration fields.
+- [x] Add SMTP configuration fields.
   Files: `backend/app/config.py`
-- [ ] Validate user registration email addresses with `EmailStr`.
+- [x] Validate user registration email addresses with `EmailStr`.
   Files: `backend/app/schemas/auth.py`
-- [ ] Add a frontend verify-email page.
+- [x] Add a frontend verify-email page.
   Files: `frontend/src/app/verify-email/page.tsx`
-- [ ] Add a frontend forgot-password page.
+- [x] Add a frontend forgot-password page.
   Files: `frontend/src/app/forgot-password/page.tsx`
-- [ ] Add a frontend reset-password page.
+- [x] Add a frontend reset-password page.
   Files: `frontend/src/app/reset-password/page.tsx`
-- [ ] Add a "Forgot password?" link to the login UI.
+- [x] Add a "Forgot password?" link to the login UI.
   Files: `frontend/src/components/auth/auth-card.tsx`
+
+Phase 2 status notes:
+- Code-complete in repo: httpOnly cookie auth, logout, cookie-aware auth dependency, sessionStorage user profile, email verification/reset flows, SMTP config fields, migration for user verification columns, and the frontend verify/reset pages.
+- Included for end-to-end support: the Next.js proxy now forwards request cookies and upstream `Set-Cookie` headers so backend auth cookies survive the proxy hop.
 
 ## Phase 3: Async Audit Pipeline
 
-- [ ] Add `job_status`, `job_error`, and `celery_task_id` fields to `AuditRun`.
+- [x] Add `job_status`, `job_error`, and `celery_task_id` fields to `AuditRun`.
   Files: `backend/app/models/audit.py`, new Alembic migration
-- [ ] Create a Celery task to run audits asynchronously.
+- [x] Create a Celery task to run audits asynchronously.
   Files: `backend/app/tasks/audit.py`
-- [ ] Update `POST /audit/run` to create a placeholder audit run and dispatch the Celery task.
+- [x] Update `POST /audit/run` to create a placeholder audit run and dispatch the Celery task.
   Files: `backend/app/routes/audit.py`
-- [ ] Add `GET /audit/job/{job_id}` for polling job status.
+- [x] Add `GET /audit/job/{job_id}` for polling job status.
   Files: `backend/app/routes/audit.py`
-- [ ] Update frontend audit execution to poll for background job completion.
+- [x] Update frontend audit execution to poll for background job completion.
   Files: `frontend/src/app/dashboard/audits/page.tsx`
-- [ ] Add frontend progress/loading feedback while an audit is running.
+- [x] Add frontend progress/loading feedback while an audit is running.
   Files: `frontend/src/app/dashboard/audits/page.tsx`
 - [ ] Configure a real AI provider in production.
   Files: production environment config
-- [ ] Export a shared `cleanAiSummaryText()` helper and use it everywhere AI summary text is rendered.
+- [x] Export a shared `cleanAiSummaryText()` helper and use it everywhere AI summary text is rendered.
   Files: `frontend/src/lib/audit.ts`, all frontend AI summary render paths
+
+Phase 3 status notes:
+- Code-complete in repo: async audit jobs, Celery task dispatch, job polling endpoint, frontend polling/progress state, completed-run filtering for report/history reads, and shared AI summary text cleanup.
+- Still manual: apply the new Alembic migration, ensure a Celery worker is running, and set production AI provider credentials.
 
 ## Phase 4: Frontend and UX Cleanup
 

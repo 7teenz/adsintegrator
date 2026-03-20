@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from jose import jwt
@@ -34,11 +35,17 @@ def get_user_by_email(db: Session, email: str) -> User | None:
     return db.query(User).filter(User.email == email.lower()).first()
 
 
-def create_user(db: Session, payload: UserCreate) -> User:
+def generate_verify_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def create_user(db: Session, payload: UserCreate, verify_token: str | None = None) -> User:
     user = User(
         email=payload.email.lower(),
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name,
+        email_verified=False,
+        email_verify_token=verify_token,
     )
     db.add(user)
     db.commit()

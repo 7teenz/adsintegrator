@@ -14,6 +14,8 @@ import { apiFetch } from "@/lib/api";
 import {
   AuditAISummary,
   AuditDashboardData,
+  AuditJob,
+  AuditJobStatus,
   AuditReport,
   AuditSummary,
   formatCurrency,
@@ -60,13 +62,27 @@ export default function AuditsPage() {
     setRunning(true);
     setError(null);
     try {
-      await apiFetch<AuditReport>("/audit/run", { method: "POST" });
+      const job = await apiFetch<AuditJob>("/audit/run", { method: "POST" });
+      await pollJobUntilDone(job.job_id);
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to run audit");
     } finally {
       setRunning(false);
     }
+  }
+
+  async function pollJobUntilDone(jobId: string) {
+    const maxAttempts = 60;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const status = await apiFetch<AuditJobStatus>(`/audit/job/${jobId}`);
+      if (status.status === "completed") return;
+      if (status.status === "failed") {
+        throw new Error(status.error || "Audit failed");
+      }
+    }
+    throw new Error("Audit timed out. Please try again.");
   }
 
   async function regenerateSummary() {
@@ -103,11 +119,16 @@ export default function AuditsPage() {
           disabled={running}
           className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
         >
-          {running ? "Running..." : "Run Audit"}
+          {running ? "Analyzing..." : "Run Audit"}
         </button>
       </section>
 
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div> : null}
+      {running ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-700">
+          Analyzing your account. This usually takes 15-30 seconds.
+        </div>
+      ) : null}
 
       {!report ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">

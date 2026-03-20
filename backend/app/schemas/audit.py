@@ -129,6 +129,9 @@ class AuditRunResponse(BaseModel):
     pillar_scores: list[AuditScoreResponse]
     recommendations: list[RecommendationResponse]
     ai_summary: AuditAISummaryResponse | None = None
+    job_status: str = "completed"
+    job_error: str | None = None
+    celery_task_id: str | None = None
 
 
 class AuditDashboardResponse(BaseModel):
@@ -155,3 +158,15 @@ class AuditSummaryResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AuditJobResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+class AuditJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    error: str | None = None
+    completed_audit_id: str | None = None

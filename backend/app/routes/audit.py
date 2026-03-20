@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.engine.collector import collect_account_data
-from app.engine.orchestrator import run_audit
 from app.middleware.deps import get_current_user
 from app.models.audit import AuditRun
 from app.models.campaign import AdSet, Campaign
@@ -15,6 +14,8 @@ from app.models.user import User
 from app.schemas.audit import (
     AuditAISummaryResponse,
     AuditDashboardResponse,
+    AuditJobResponse,
+    AuditJobStatusResponse,
     AuditFindingResponse,
     AccountKpiResponse,
     AuditRunResponse,
@@ -30,6 +31,7 @@ from app.services.ai_summary import AISummaryService
 from app.services.entitlements import EntitlementService, Entitlements
 from app.services.meta_ads import MetaAdsService
 from app.services.meta_auth import MetaAuthService
+from app.tasks.audit import run_audit_job
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -217,10 +219,13 @@ def _serialize(run: AuditRun, entitlements: Entitlements) -> AuditRunResponse:
         pillar_scores=score_rows,
         recommendations=rec_rows,
         ai_summary=_ai_summary_response(run.ai_summary, entitlements.show_full_recommendations) if run.ai_summary else None,
+        job_status=run.job_status,
+        job_error=run.job_error,
+        celery_task_id=run.celery_task_id,
     )
 
 
-def _latest_run_query(db: Session, user_id: str):
+def _base_run_query(db: Session, user_id: str):
     return (
         db.query(AuditRun)
         .options(
@@ -230,8 +235,11 @@ def _latest_run_query(db: Session, user_id: str):
             selectinload(AuditRun.ai_summary),
         )
         .filter(AuditRun.user_id == user_id)
-        .order_by(AuditRun.created_at.desc())
     )
+
+
+def _latest_completed_run_query(db: Session, user_id: str):
+    return _base_run_query(db, user_id).filter(AuditRun.job_status == "completed").order_by(AuditRun.created_at.desc())
 
 
 def _get_run_for_user(db: Session, user_id: str, audit_run_id: str) -> AuditRun:
@@ -254,21 +262,62 @@ def _get_run_for_user(db: Session, user_id: str, audit_run_id: str) -> AuditRun:
     return run
 
 
-@router.post("/run", response_model=AuditRunResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/run", response_model=AuditJobResponse, status_code=status.HTTP_201_CREATED)
 def run_new_audit(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     entitlements = EntitlementService.get_entitlements(db, current_user.id)
     EntitlementService.enforce_report_quota(db, current_user.id, entitlements)
 
     account = _get_selected_account(db, current_user.id)
-    run = run_audit(db, account.id, current_user.id)
-    run = _latest_run_query(db, current_user.id).filter(AuditRun.id == run.id).first()
-    return _serialize(run, entitlements)
+    now = datetime.utcnow().date()
+    run = AuditRun(
+        user_id=current_user.id,
+        ad_account_id=account.id,
+        health_score=0.0,
+        total_spend=0.0,
+        total_wasted_spend=0.0,
+        total_estimated_uplift=0.0,
+        findings_count=0,
+        campaign_count=0,
+        ad_set_count=0,
+        ad_count=0,
+        analysis_start=now,
+        analysis_end=now,
+        job_status="pending",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    task = run_audit_job.delay(run.id)
+    run.celery_task_id = task.id
+    db.commit()
+    return AuditJobResponse(job_id=run.id, status=run.job_status)
+
+
+@router.get("/job/{job_id}", response_model=AuditJobStatusResponse)
+def get_audit_job_status(job_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    run = (
+        db.query(AuditRun)
+        .filter(AuditRun.id == job_id, AuditRun.user_id == current_user.id)
+        .first()
+    )
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": "Audit job not found", "code": "AUDIT_JOB_NOT_FOUND"},
+        )
+    return AuditJobStatusResponse(
+        job_id=run.id,
+        status=run.job_status,
+        error=run.job_error,
+        completed_audit_id=run.id if run.job_status == "completed" else None,
+    )
 
 
 @router.get("/latest", response_model=AuditRunResponse | None)
 def get_latest_audit(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     entitlements = EntitlementService.get_entitlements(db, current_user.id)
-    run = _latest_run_query(db, current_user.id).first()
+    run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         return None
     return _serialize(run, entitlements)
@@ -281,7 +330,7 @@ def get_latest_ai_summary(
     db: Session = Depends(get_db),
 ):
     entitlements = EntitlementService.get_entitlements(db, current_user.id)
-    run = _latest_run_query(db, current_user.id).first()
+    run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         return None
 
@@ -295,7 +344,7 @@ def get_latest_ai_summary(
 @router.post("/latest/ai-summary/regenerate", response_model=AuditAISummaryResponse)
 def regenerate_latest_ai_summary(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     entitlements = EntitlementService.get_entitlements(db, current_user.id)
-    run = _latest_run_query(db, current_user.id).first()
+    run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -335,7 +384,7 @@ def get_audit_dashboard(current_user: User = Depends(get_current_user), db: Sess
     entitlements = EntitlementService.get_entitlements(db, current_user.id)
     account = _get_selected_account(db, current_user.id)
     snapshot = collect_account_data(db, account.id)
-    run = _latest_run_query(db, current_user.id).first()
+    run = _latest_completed_run_query(db, current_user.id).first()
     audit = _serialize(run, entitlements) if run else None
 
     findings = audit.findings if audit else []
@@ -415,7 +464,7 @@ def get_audit_dashboard(current_user: User = Depends(get_current_user), db: Sess
 @router.get("/latest/findings", response_model=list[AuditFindingResponse])
 def get_latest_findings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     entitlements = EntitlementService.get_entitlements(db, current_user.id)
-    run = _latest_run_query(db, current_user.id).first()
+    run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         return []
     return [_finding_response(finding) for finding in run.findings][: entitlements.max_findings]
@@ -423,7 +472,7 @@ def get_latest_findings(current_user: User = Depends(get_current_user), db: Sess
 
 @router.get("/latest/score", response_model=list[AuditScoreResponse])
 def get_latest_score(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    run = _latest_run_query(db, current_user.id).first()
+    run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         return []
     return [_score_response(score, 0) for score in run.scores]
@@ -439,7 +488,7 @@ def get_audit_history(
     capped_limit = min(limit, entitlements.max_history_items)
     runs = (
         db.query(AuditRun)
-        .filter(AuditRun.user_id == current_user.id)
+        .filter(AuditRun.user_id == current_user.id, AuditRun.job_status == "completed")
         .order_by(AuditRun.created_at.desc())
         .limit(capped_limit)
         .all()

@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -14,15 +14,16 @@ security = HTTPBearer(auto_error=False)
 def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    access_token: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
 ) -> User:
-    if credentials is None:
+    token = access_token or (credentials.credentials if credentials else None)
+    if token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"detail": "Not authenticated", "code": "AUTH_REQUIRED"},
         )
 
-    token = credentials.credentials
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         user_id: str | None = payload.get("sub")
@@ -43,5 +44,11 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"detail": "User not found", "code": "AUTH_USER_NOT_FOUND"},
         )
+    if not user.email_verified and not settings.debug:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"detail": "Email not verified", "code": "EMAIL_NOT_VERIFIED"},
+        )
+
     request.state.user_id = user.id
     return user

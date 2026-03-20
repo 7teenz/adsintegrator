@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.engine.collector import collect_account_data
@@ -17,6 +19,28 @@ SEVERITY_ORDER = {
 
 
 def run_audit(db: Session, ad_account_id: str, user_id: str) -> AuditRun:
+    audit_run = AuditRun(
+        user_id=user_id,
+        ad_account_id=ad_account_id,
+        health_score=0.0,
+        total_spend=0.0,
+        total_wasted_spend=0.0,
+        total_estimated_uplift=0.0,
+        findings_count=0,
+        campaign_count=0,
+        ad_set_count=0,
+        ad_count=0,
+        analysis_start=date.today(),
+        analysis_end=date.today(),
+    )
+    db.add(audit_run)
+    db.flush()
+    return populate_audit_run(db, audit_run)
+
+
+def populate_audit_run(db: Session, audit_run: AuditRun) -> AuditRun:
+    ad_account_id = audit_run.ad_account_id
+    user_id = audit_run.user_id
     snapshot = collect_account_data(db, ad_account_id)
     findings: list[Finding] = []
     for rule in get_all_rules():
@@ -33,22 +57,23 @@ def run_audit(db: Session, ad_account_id: str, user_id: str) -> AuditRun:
     total_wasted = min(snapshot.account.total_spend, sum(finding.estimated_waste for finding in findings))
     total_uplift = sum(finding.estimated_uplift for finding in findings)
 
-    audit_run = AuditRun(
-        user_id=user_id,
-        ad_account_id=ad_account_id,
-        health_score=health_score,
-        total_spend=snapshot.account.total_spend,
-        total_wasted_spend=total_wasted,
-        total_estimated_uplift=total_uplift,
-        findings_count=len(findings),
-        campaign_count=snapshot.campaign_count,
-        ad_set_count=snapshot.ad_set_count,
-        ad_count=snapshot.ad_count,
-        analysis_start=snapshot.analysis_start,
-        analysis_end=snapshot.analysis_end,
-    )
-    db.add(audit_run)
-    db.flush()
+    audit_run.health_score = health_score
+    audit_run.total_spend = snapshot.account.total_spend
+    audit_run.total_wasted_spend = total_wasted
+    audit_run.total_estimated_uplift = total_uplift
+    audit_run.findings_count = len(findings)
+    audit_run.campaign_count = snapshot.campaign_count
+    audit_run.ad_set_count = snapshot.ad_set_count
+    audit_run.ad_count = snapshot.ad_count
+    audit_run.analysis_start = snapshot.analysis_start
+    audit_run.analysis_end = snapshot.analysis_end
+
+    for collection in (audit_run.findings, audit_run.scores, audit_run.recommendations):
+        if collection:
+            collection.clear()
+    if audit_run.ai_summary is not None:
+        db.delete(audit_run.ai_summary)
+        db.flush()
 
     finding_rows: list[AuditFinding] = []
     for finding in findings:

@@ -12,6 +12,10 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
   if (contentType) {
     headers["Content-Type"] = contentType;
   }
+  const cookie = request.headers.get("cookie");
+  if (cookie) {
+    headers.Cookie = cookie;
+  }
 
   const auth = request.headers.get("authorization");
   if (auth) headers.Authorization = auth;
@@ -30,6 +34,8 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
   const responseHeaders = new Headers();
   const responseContentType = upstream.headers.get("content-type");
   if (responseContentType) responseHeaders.set("content-type", responseContentType);
+  const setCookie = upstream.headers.get("set-cookie");
+  if (setCookie) responseHeaders.set("set-cookie", setCookie);
 
   return new Response(await upstream.arrayBuffer(), {
     status: upstream.status,

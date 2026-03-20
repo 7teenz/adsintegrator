@@ -1,21 +1,16 @@
-import { clearAuth, getToken } from "@/lib/auth";
+import { clearAuth } from "@/lib/auth";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api/proxy";
 
 interface RequestOptions extends RequestInit {
-  token?: string;
   noAuth?: boolean;
 }
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { token, noAuth, headers, ...rest } = options;
-  const authToken = token || (!noAuth ? getToken() : null);
+  const { noAuth, headers, ...rest } = options;
   const url = `${API_URL}${path}`;
   const isFormData = typeof FormData !== "undefined" && rest.body instanceof FormData;
   const baseHeaders = new Headers(headers ?? undefined);
-  if (authToken) {
-    baseHeaders.set("Authorization", `Bearer ${authToken}`);
-  }
   if (!isFormData) {
     baseHeaders.set("Content-Type", "application/json");
   }
@@ -23,6 +18,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   let response: Response;
   try {
     response = await fetch(url, {
+      credentials: "include",
       headers: baseHeaders,
       ...rest,
     });
@@ -32,7 +28,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   if (response.status === 401) {
     clearAuth();
-    if (typeof window !== "undefined") {
+    if (!noAuth && typeof window !== "undefined") {
       window.location.href = "/login";
     }
     throw new Error("Session expired");

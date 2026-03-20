@@ -14,12 +14,12 @@ interface AuthCardProps {
 }
 
 interface AuthResponse {
-  access_token: string;
   user: {
     id: string;
     email: string;
     full_name: string | null;
     is_active: boolean;
+    email_verified: boolean;
   };
 }
 
@@ -30,6 +30,7 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const isLogin = mode === "login";
 
@@ -37,21 +38,26 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
     event.preventDefault();
     setLoading(true);
     setError("");
+    setSuccess("");
 
     try {
       const payload = isLogin
         ? { email, password }
         : { email, password, full_name: fullName || undefined };
 
-      const data = await apiFetch<AuthResponse>(isLogin ? "/auth/login" : "/auth/register", {
+      const data = await apiFetch<AuthResponse | { message: string }>(isLogin ? "/auth/login" : "/auth/register", {
         method: "POST",
         body: JSON.stringify(payload),
         noAuth: true,
       });
 
-      setAuth(data.access_token, data.user);
-      router.push(nextHref);
-      router.refresh();
+      if (isLogin) {
+        setAuth((data as AuthResponse).user);
+        router.push(nextHref);
+        router.refresh();
+      } else {
+        setSuccess((data as { message: string }).message);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
@@ -78,6 +84,12 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
       {error ? (
         <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      ) : null}
+
+      {success ? (
+        <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {success}
         </div>
       ) : null}
 
@@ -131,6 +143,13 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
           {isLogin ? "Register" : "Sign in"}
         </Link>
       </p>
+      {isLogin ? (
+        <p className="mt-2 text-sm text-slate-500">
+          <Link href="/forgot-password" className="font-medium text-brand-600">
+            Forgot password?
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }

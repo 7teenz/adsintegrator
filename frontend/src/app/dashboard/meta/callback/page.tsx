@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { apiFetch } from "@/lib/api";
-import { getToken } from "@/lib/auth";
 
 export default function MetaCallbackPage() {
   const router = useRouter();
@@ -14,11 +13,6 @@ export default function MetaCallbackPage() {
 
   useEffect(() => {
     async function handleCallback() {
-      if (!getToken()) {
-        router.replace("/login?next=/dashboard");
-        return;
-      }
-
       const code = searchParams.get("code");
       const state = searchParams.get("state");
       const error = searchParams.get("error");

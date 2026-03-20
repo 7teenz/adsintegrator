@@ -72,6 +72,17 @@ interface ConnectionStatus {
   connected: boolean;
 }
 
+interface AuditJob {
+  job_id: string;
+  status: string;
+}
+
+interface AuditJobStatus {
+  job_id: string;
+  status: string;
+  error?: string | null;
+}
+
 interface FilePreview {
   fileName: string;
   kind: "csv" | "xlsx";
@@ -210,7 +221,8 @@ export function DataSync({ onSyncComplete }: Props) {
     setError("");
     setRunningAudit(true);
     try {
-      await apiFetch("/audit/run", { method: "POST" });
+      const job = await apiFetch<AuditJob>("/audit/run", { method: "POST" });
+      await pollAuditJob(job.job_id);
       await fetchQuota();
       onSyncComplete?.();
     } catch (err) {
@@ -218,6 +230,19 @@ export function DataSync({ onSyncComplete }: Props) {
     } finally {
       setRunningAudit(false);
     }
+  }
+
+  async function pollAuditJob(jobId: string) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const status = await apiFetch<AuditJobStatus>(`/audit/job/${jobId}`);
+      if (status.status === "completed") return;
+      if (status.status === "failed") {
+        throw new Error(status.error || "Audit failed");
+      }
+    }
+
+    throw new Error("Audit timed out. Please try again.");
   }
 
   async function buildPreview(file: File) {

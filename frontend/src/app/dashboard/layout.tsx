@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { apiFetch } from "@/lib/api";
-import { getToken, setAuth, type User } from "@/lib/auth";
+import { clearAuth, setAuth, type User } from "@/lib/auth";
 import { PlanProvider } from "@/lib/plan";
 
 export default function DashboardLayout({
@@ -20,17 +20,12 @@ export default function DashboardLayout({
 
   useEffect(() => {
     async function validateSession() {
-      const token = getToken();
-      if (!token) {
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-        return;
-      }
-
       try {
         const user = await apiFetch<User>("/auth/me");
-        setAuth(token, user);
+        setAuth(user);
         setStatus("ready");
       } catch {
+        clearAuth();
         router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       }
     }

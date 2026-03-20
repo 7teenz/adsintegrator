@@ -52,6 +52,18 @@ export interface AuditAISummary {
   updated_at: string;
 }
 
+export interface AuditJob {
+  job_id: string;
+  status: string;
+}
+
+export interface AuditJobStatus {
+  job_id: string;
+  status: string;
+  error?: string | null;
+  completed_audit_id?: string | null;
+}
+
 export interface AuditReport {
   id: string;
   health_score: number;
@@ -70,6 +82,9 @@ export interface AuditReport {
   pillar_scores: ScoreBreakdown[];
   recommendations: Recommendation[];
   ai_summary: AuditAISummary | null;
+  job_status: string;
+  job_error: string | null;
+  celery_task_id: string | null;
 }
 
 export interface SeverityCounts {
@@ -162,4 +177,16 @@ export function formatDate(value: string): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+export function cleanAiSummaryText(text: string | null | undefined): string | null {
+  if (!text) return null;
+
+  return (
+    text
+      .replace(/AI generation fallback used \([^)]+\)\.?/gi, "")
+      .replace(/provider not configured\.?/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim() || null
+  );
 }
