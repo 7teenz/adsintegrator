@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     ai_model: str = "gpt-4o-mini"
     ai_openai_base_url: str = "https://api.openai.com/v1"
     ai_anthropic_base_url: str = "https://api.anthropic.com/v1"
+    ai_gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     ai_timeout_seconds: int = Field(default=45, ge=5, le=180)
     ai_max_retries: int = Field(default=2, ge=0, le=5)
     ai_prompt_version: str = "v1"
@@ -46,6 +47,18 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = "noreply@example.com"
+    smtp_starttls: bool = True
+
+    sentry_dsn: str = ""
+    sentry_environment: str = "local"
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    rate_limit_auth_requests: int = Field(default=6, ge=1, le=100)
+    rate_limit_auth_window_seconds: int = Field(default=300, ge=30, le=3600)
+    rate_limit_upload_requests: int = Field(default=6, ge=1, le=100)
+    rate_limit_upload_window_seconds: int = Field(default=3600, ge=60, le=86400)
+    rate_limit_audit_requests: int = Field(default=10, ge=1, le=100)
+    rate_limit_audit_window_seconds: int = Field(default=3600, ge=60, le=86400)
 
     free_max_ad_accounts: int = 1
     free_max_findings: int = 3

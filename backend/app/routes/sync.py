@@ -1,9 +1,11 @@
 from datetime import datetime, time
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
+from app.logging_config import get_logger
 from app.middleware.deps import get_current_user
 from app.models.campaign import Ad, AdSet, Campaign, Creative
 from app.models.insights import DailyAccountInsight, DailyAdInsight, DailyAdSetInsight, DailyCampaignInsight
@@ -13,9 +15,12 @@ from app.schemas.sync import ReportImportResponse, SyncDataSummary, SyncJobRespo
 from app.services.csv_import import CsvImportService
 from app.services.meta_ads import MetaAdsService
 from app.services.meta_auth import MetaAuthService
+from app.services.rate_limit import enforce_rate_limit
 from app.tasks.sync import run_incremental_sync_job, run_initial_sync_job
 
 router = APIRouter(prefix="/sync", tags=["sync"])
+settings = get_settings()
+logger = get_logger(__name__)
 
 
 def _get_selected_account(db: Session, user_id: str):
@@ -42,10 +47,12 @@ def _serialize_job(job: SyncJob | None) -> SyncJobResponse | None:
 
 @router.post("/start", response_model=SyncStartResponse, status_code=status.HTTP_202_ACCEPTED)
 def start_sync(
+    request: Request,
     payload: SyncStartRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(request, "sync:start", 6, 3600, user_id=current_user.id)
     account = _get_selected_account(db, current_user.id)
 
     running = (
@@ -168,35 +175,65 @@ def _serialize_import_result(result, replace_existing: bool) -> ReportImportResp
 
 @router.post("/import-report", response_model=ReportImportResponse)
 async def import_report_history(
+    request: Request,
     file: UploadFile = File(...),
     replace_existing: bool = Form(False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    content = await file.read()
-    result = CsvImportService.import_report(
-        db=db,
-        user=current_user,
-        filename=file.filename or "upload.csv",
-        content_bytes=content,
-        replace_existing=replace_existing,
+    enforce_rate_limit(
+        request,
+        "sync:import_report",
+        settings.rate_limit_upload_requests,
+        settings.rate_limit_upload_window_seconds,
+        user_id=current_user.id,
     )
+    content = await file.read()
+    try:
+        result = CsvImportService.import_report(
+            db=db,
+            user=current_user,
+            filename=file.filename or "upload.csv",
+            content_bytes=content,
+            replace_existing=replace_existing,
+        )
+    except Exception:
+        logger.exception(
+            "sync.import_failed",
+            extra={"request_id": getattr(request.state, "request_id", None), "user_id": current_user.id, "code": "SYNC_IMPORT_FAILED"},
+        )
+        raise
     return _serialize_import_result(result, replace_existing)
 
 
 @router.post("/import-csv", response_model=ReportImportResponse)
 async def import_csv_history(
+    request: Request,
     file: UploadFile = File(...),
     replace_existing: bool = Form(False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    content = await file.read()
-    result = CsvImportService.import_report(
-        db=db,
-        user=current_user,
-        filename=file.filename or "upload.csv",
-        content_bytes=content,
-        replace_existing=replace_existing,
+    enforce_rate_limit(
+        request,
+        "sync:import_csv",
+        settings.rate_limit_upload_requests,
+        settings.rate_limit_upload_window_seconds,
+        user_id=current_user.id,
     )
+    content = await file.read()
+    try:
+        result = CsvImportService.import_report(
+            db=db,
+            user=current_user,
+            filename=file.filename or "upload.csv",
+            content_bytes=content,
+            replace_existing=replace_existing,
+        )
+    except Exception:
+        logger.exception(
+            "sync.import_failed",
+            extra={"request_id": getattr(request.state, "request_id", None), "user_id": current_user.id, "code": "SYNC_IMPORT_FAILED"},
+        )
+        raise
     return _serialize_import_result(result, replace_existing)

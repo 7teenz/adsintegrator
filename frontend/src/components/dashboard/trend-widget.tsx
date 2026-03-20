@@ -51,7 +51,7 @@ export function TrendWidget({ title = "Spend and ROAS Trend", points, showRoas =
           {latest ? (
             <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
               <span>Latest spend {formatCurrency(latest.spend)}</span>
-              {showRoas ? <span>Latest ROAS {latest.roas.toFixed(2)}</span> : <span>Upgrade for ROAS trend</span>}
+              {showRoas ? <span>Latest ROAS {latest.roas.toFixed(2)}</span> : <span>Spend-only trend view</span>}
             </div>
           ) : null}
         </>

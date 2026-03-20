@@ -1,11 +1,11 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { apiFetch } from "@/lib/api";
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [password, setPassword] = useState("");
@@ -42,30 +42,47 @@ export default function ResetPasswordPage() {
   }
 
   return (
+    <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+      <h1 className="text-2xl font-semibold text-slate-900">Choose a new password</h1>
+      <p className="mt-3 text-sm text-slate-600">Set a new password for your Meta Ads Audit account.</p>
+      {message ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
+      {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <label className="block text-sm text-slate-600">
+          New password
+          <input
+            type="password"
+            required
+            minLength={8}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand-500"
+            placeholder="At least 8 characters"
+          />
+        </label>
+        <button type="submit" disabled={loading} className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
+          {loading ? "Updating..." : "Update password"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function ResetPasswordFallback() {
+  return (
+    <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+      <h1 className="text-2xl font-semibold text-slate-900">Choose a new password</h1>
+      <p className="mt-3 text-sm text-slate-600">Preparing reset form.</p>
+    </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold text-slate-900">Choose a new password</h1>
-        <p className="mt-3 text-sm text-slate-600">Set a new password for your Meta Ads Audit account.</p>
-        {message ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
-        {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <label className="block text-sm text-slate-600">
-            New password
-            <input
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand-500"
-              placeholder="At least 8 characters"
-            />
-          </label>
-          <button type="submit" disabled={loading} className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
-            {loading ? "Updating..." : "Update password"}
-          </button>
-        </form>
-      </div>
+      <Suspense fallback={<ResetPasswordFallback />}>
+        <ResetPasswordContent />
+      </Suspense>
     </main>
   );
 }

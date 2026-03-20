@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { apiFetch } from "@/lib/api";
 import { setAuth, type User } from "@/lib/auth";
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
@@ -43,13 +43,30 @@ export default function VerifyEmailPage() {
   }, [router, searchParams]);
 
   return (
+    <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+      <h1 className="text-2xl font-semibold text-slate-900">
+        {status === "success" ? "Email verified" : status === "error" ? "Verification failed" : "Verifying email"}
+      </h1>
+      <p className="mt-3 text-sm text-slate-600">{message}</p>
+    </div>
+  );
+}
+
+function VerifyEmailFallback() {
+  return (
+    <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+      <h1 className="text-2xl font-semibold text-slate-900">Verifying email</h1>
+      <p className="mt-3 text-sm text-slate-600">Preparing verification.</p>
+    </div>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold text-slate-900">
-          {status === "success" ? "Email verified" : status === "error" ? "Verification failed" : "Verifying email"}
-        </h1>
-        <p className="mt-3 text-sm text-slate-600">{message}</p>
-      </div>
+      <Suspense fallback={<VerifyEmailFallback />}>
+        <VerifyEmailContent />
+      </Suspense>
     </main>
   );
 }

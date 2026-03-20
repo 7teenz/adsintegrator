@@ -1,11 +1,13 @@
 from datetime import datetime
 from collections import Counter
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session, selectinload
 
+from app.config import get_settings
 from app.database import get_db
 from app.engine.collector import collect_account_data
+from app.logging_config import get_logger
 from app.middleware.deps import get_current_user
 from app.models.audit import AuditRun
 from app.models.campaign import AdSet, Campaign
@@ -31,9 +33,12 @@ from app.services.ai_summary import AISummaryService
 from app.services.entitlements import EntitlementService, Entitlements
 from app.services.meta_ads import MetaAdsService
 from app.services.meta_auth import MetaAuthService
+from app.services.rate_limit import enforce_rate_limit
 from app.tasks.audit import run_audit_job
 
 router = APIRouter(prefix="/audit", tags=["audit"])
+settings = get_settings()
+logger = get_logger(__name__)
 
 
 def _get_selected_account(db: Session, user_id: str):
@@ -178,9 +183,9 @@ def _finding_response(finding) -> AuditFindingResponse:
     )
 
 
-def _ai_summary_response(summary, include_detailed: bool) -> AuditAISummaryResponse:
-    detailed = summary.detailed_audit_explanation if include_detailed else "Upgrade to Premium to unlock detailed AI explanation."
-    action_plan = summary.prioritized_action_plan if include_detailed else "Upgrade to Premium to unlock full prioritized action plan."
+def _ai_summary_response(summary, include_detailed: bool = True) -> AuditAISummaryResponse:
+    detailed = summary.detailed_audit_explanation
+    action_plan = summary.prioritized_action_plan
     return AuditAISummaryResponse(
         id=summary.id,
         audit_run_id=summary.audit_run_id,
@@ -198,8 +203,8 @@ def _ai_summary_response(summary, include_detailed: bool) -> AuditAISummaryRespo
 
 
 def _serialize(run: AuditRun, entitlements: Entitlements) -> AuditRunResponse:
-    findings_rows = [_finding_response(finding) for finding in run.findings][: entitlements.max_findings]
-    rec_rows = [RecommendationResponse.model_validate(item) for item in run.recommendations][: entitlements.max_recommendations]
+    findings_rows = [_finding_response(finding) for finding in run.findings]
+    rec_rows = [RecommendationResponse.model_validate(item) for item in run.recommendations]
     score_rows = [_score_response(score, 0) for score in run.scores]
     return AuditRunResponse(
         id=run.id,
@@ -218,7 +223,7 @@ def _serialize(run: AuditRun, entitlements: Entitlements) -> AuditRunResponse:
         scores=score_rows,
         pillar_scores=score_rows,
         recommendations=rec_rows,
-        ai_summary=_ai_summary_response(run.ai_summary, entitlements.show_full_recommendations) if run.ai_summary else None,
+        ai_summary=_ai_summary_response(run.ai_summary) if run.ai_summary else None,
         job_status=run.job_status,
         job_error=run.job_error,
         celery_task_id=run.celery_task_id,
@@ -263,10 +268,14 @@ def _get_run_for_user(db: Session, user_id: str, audit_run_id: str) -> AuditRun:
 
 
 @router.post("/run", response_model=AuditJobResponse, status_code=status.HTTP_201_CREATED)
-def run_new_audit(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    entitlements = EntitlementService.get_entitlements(db, current_user.id)
-    EntitlementService.enforce_report_quota(db, current_user.id, entitlements)
-
+def run_new_audit(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    enforce_rate_limit(
+        request,
+        "audit:run",
+        settings.rate_limit_audit_requests,
+        settings.rate_limit_audit_window_seconds,
+        user_id=current_user.id,
+    )
     account = _get_selected_account(db, current_user.id)
     now = datetime.utcnow().date()
     run = AuditRun(
@@ -291,6 +300,16 @@ def run_new_audit(current_user: User = Depends(get_current_user), db: Session = 
     task = run_audit_job.delay(run.id)
     run.celery_task_id = task.id
     db.commit()
+    logger.info(
+        "audit.started",
+        extra={
+            "request_id": getattr(request.state, "request_id", None),
+            "user_id": current_user.id,
+            "audit_run_id": run.id,
+            "task_id": task.id,
+            "code": "AUDIT_STARTED",
+        },
+    )
     return AuditJobResponse(job_id=run.id, status=run.job_status)
 
 
@@ -316,10 +335,10 @@ def get_audit_job_status(job_id: str, current_user: User = Depends(get_current_u
 
 @router.get("/latest", response_model=AuditRunResponse | None)
 def get_latest_audit(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    entitlements = EntitlementService.get_entitlements(db, current_user.id)
     run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         return None
+    entitlements = EntitlementService.get_entitlements(db, current_user.id)
     return _serialize(run, entitlements)
 
 
@@ -335,15 +354,14 @@ def get_latest_ai_summary(
         return None
 
     if run.ai_summary and not auto_generate:
-        return _ai_summary_response(run.ai_summary, entitlements.show_full_recommendations)
+        return _ai_summary_response(run.ai_summary)
 
     summary = AISummaryService.generate_for_run(db, run, regenerate=False)
-    return _ai_summary_response(summary, entitlements.show_full_recommendations)
+    return _ai_summary_response(summary)
 
 
 @router.post("/latest/ai-summary/regenerate", response_model=AuditAISummaryResponse)
 def regenerate_latest_ai_summary(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    entitlements = EntitlementService.get_entitlements(db, current_user.id)
     run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         raise HTTPException(
@@ -351,7 +369,7 @@ def regenerate_latest_ai_summary(current_user: User = Depends(get_current_user),
             detail={"detail": "No audit runs yet", "code": "AUDIT_RUN_NOT_FOUND"},
         )
     summary = AISummaryService.generate_for_run(db, run, regenerate=True)
-    return _ai_summary_response(summary, entitlements.show_full_recommendations)
+    return _ai_summary_response(summary)
 
 
 @router.get("/{audit_run_id}/ai-summary", response_model=AuditAISummaryResponse | None)
@@ -361,22 +379,20 @@ def get_ai_summary_for_run(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    entitlements = EntitlementService.get_entitlements(db, current_user.id)
     run = _get_run_for_user(db, current_user.id, audit_run_id)
 
     if run.ai_summary and not auto_generate:
-        return _ai_summary_response(run.ai_summary, entitlements.show_full_recommendations)
+        return _ai_summary_response(run.ai_summary)
 
     summary = AISummaryService.generate_for_run(db, run, regenerate=False)
-    return _ai_summary_response(summary, entitlements.show_full_recommendations)
+    return _ai_summary_response(summary)
 
 
 @router.post("/{audit_run_id}/ai-summary/regenerate", response_model=AuditAISummaryResponse)
 def regenerate_ai_summary_for_run(audit_run_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    entitlements = EntitlementService.get_entitlements(db, current_user.id)
     run = _get_run_for_user(db, current_user.id, audit_run_id)
     summary = AISummaryService.generate_for_run(db, run, regenerate=True)
-    return _ai_summary_response(summary, entitlements.show_full_recommendations)
+    return _ai_summary_response(summary)
 
 
 @router.get("/dashboard", response_model=AuditDashboardResponse)
@@ -394,11 +410,11 @@ def get_audit_dashboard(current_user: User = Depends(get_current_user), db: Sess
         medium=len([item for item in findings if item.severity == "medium"]),
         low=len([item for item in findings if item.severity == "low"]),
     )
-    top_opportunities = sorted(findings, key=lambda item: item.estimated_uplift, reverse=True)[: entitlements.max_findings]
+    top_opportunities = sorted(findings, key=lambda item: item.estimated_uplift, reverse=True)[:5]
     kpis = _compute_account_kpis(db, account.id)
 
     trend: list[TrendPointResponse] = []
-    trend_limit = entitlements.max_trend_points if entitlements.show_advanced_charts else min(entitlements.max_trend_points, 14)
+    trend_limit = 30
     trend_rows = (
         db.query(DailyAccountInsight)
         .filter(DailyAccountInsight.ad_account_id == account.id)
@@ -463,11 +479,10 @@ def get_audit_dashboard(current_user: User = Depends(get_current_user), db: Sess
 
 @router.get("/latest/findings", response_model=list[AuditFindingResponse])
 def get_latest_findings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    entitlements = EntitlementService.get_entitlements(db, current_user.id)
     run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         return []
-    return [_finding_response(finding) for finding in run.findings][: entitlements.max_findings]
+    return [_finding_response(finding) for finding in run.findings]
 
 
 @router.get("/latest/score", response_model=list[AuditScoreResponse])
@@ -484,8 +499,7 @@ def get_audit_history(
     db: Session = Depends(get_db),
     limit: int = Query(20, ge=1, le=200),
 ):
-    entitlements = EntitlementService.get_entitlements(db, current_user.id)
-    capped_limit = min(limit, entitlements.max_history_items)
+    capped_limit = min(limit, 50)
     runs = (
         db.query(AuditRun)
         .filter(AuditRun.user_id == current_user.id, AuditRun.job_status == "completed")

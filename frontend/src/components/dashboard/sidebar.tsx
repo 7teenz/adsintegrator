@@ -2,12 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, FileBarChart, Settings, LogOut, Sparkles } from "lucide-react";
+import { LayoutDashboard, FileBarChart, Settings, LogOut } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
 import { clearAuth, getUser } from "@/lib/auth";
-import { usePlan } from "@/lib/plan";
-import { UpgradeCta } from "@/components/billing/upgrade-cta";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -19,7 +17,6 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const user = getUser();
-  const { plan, isPremium } = usePlan();
 
   const handleLogout = async () => {
     try {
@@ -36,9 +33,9 @@ export function Sidebar() {
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <p className="text-lg font-bold tracking-tight text-slate-900">Meta Audit</p>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">v0.5</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">local MVP</span>
         </div>
-        <p className="mt-2 text-xs text-slate-500">Deterministic ad-account intelligence</p>
+        <p className="mt-2 text-xs text-slate-500">Upload an export, audit the account, and review the highest-impact fixes.</p>
       </div>
 
       <nav className="mt-6 space-y-1">
@@ -60,19 +57,9 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Current Plan</p>
-          <span className={`rounded-full px-2 py-1 text-xs font-semibold ${isPremium ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-            {plan}
-          </span>
-        </div>
-        {!isPremium ? (
-          <div className="mt-3">
-            <UpgradeCta compact title="Unlock Full Report" body="See full findings, advanced trend blocks, and long-range history." />
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-emerald-700">Premium insights unlocked.</p>
-        )}
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Access</p>
+        <p className="mt-2 text-sm font-semibold text-slate-900">Included in this MVP</p>
+        <p className="mt-2 text-xs text-slate-500">Advanced billing is not enabled in this build. The focus is the upload, audit, and review loop.</p>
       </div>
 
       <div className="mt-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -86,13 +73,6 @@ export function Sidebar() {
           Sign Out
         </button>
       </div>
-
-      {!isPremium ? (
-        <Link href="/dashboard/settings" className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
-          <Sparkles className="h-4 w-4" />
-          Upgrade
-        </Link>
-      ) : null}
     </aside>
   );
 }

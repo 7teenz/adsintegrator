@@ -125,44 +125,48 @@ Phase 3 status notes:
 
 ## Phase 4: Frontend and UX Cleanup
 
-- [ ] Remove internal MVP and developer-facing strings from the UI.
+- [x] Remove internal MVP and developer-facing strings from the UI.
   Files: multiple files under `frontend/src`
-- [ ] Rename "Local MVP Billing" to "Plan & Billing".
+- [x] Rename "Local MVP Billing" to "Plan & Billing".
   Files: `frontend/src/app/dashboard/settings/page.tsx`
-- [ ] Delete the Stripe placeholder paragraph in settings.
+- [x] Delete the Stripe placeholder paragraph in settings.
   Files: `frontend/src/app/dashboard/settings/page.tsx`
-- [ ] Show the debug-only data reset UI only in development.
+- [x] Show the debug-only data reset UI only in development.
   Files: `frontend/src/app/dashboard/settings/page.tsx`
-- [ ] Remove the local MVP guidance strings from the data sync flow.
+- [x] Remove the local MVP guidance strings from the data sync flow.
   Files: `frontend/src/components/data-sync.tsx`
-- [ ] Rename "Deterministic Account Diagnosis" to "Account Audit Report".
+- [x] Rename "Deterministic Account Diagnosis" to "Account Audit Report".
   Files: `frontend/src/app/dashboard/audits/page.tsx`
-- [ ] Replace "deterministic audit engine" with "performance analysis engine".
+- [x] Replace "deterministic audit engine" with "performance analysis engine".
   Files: `frontend/src/app/dashboard/audits/page.tsx`
-- [ ] Remove the "Phase 2" label from the login page panel.
+- [x] Remove the "Phase 2" label from the login page panel.
   Files: `frontend/src/app/login/page.tsx`
-- [ ] Remove MVP workflow guidance from the dashboard page.
+- [x] Remove MVP workflow guidance from the dashboard page.
   Files: `frontend/src/app/dashboard/page.tsx`
-- [ ] Fix the broken "How It Works" CTA.
+- [x] Fix the broken "How It Works" CTA.
   Files: `frontend/src/components/landing/hero.tsx`
-- [ ] Change the primary landing page CTA to send unauthenticated users to `/register`.
+- [x] Change the primary landing page CTA to send unauthenticated users to `/register`.
   Files: `frontend/src/components/landing/hero.tsx`
-- [ ] Update the landing page headline and subheadline to reflect the upload-first flow.
+- [x] Update the landing page headline and subheadline to reflect the upload-first flow.
   Files: `frontend/src/components/landing/hero.tsx`
-- [ ] Add a footer with links to `/privacy` and `/terms`.
+- [x] Add a footer with links to `/privacy` and `/terms`.
   Files: `frontend/src/app/page.tsx`
-- [ ] Add a pricing link in the top navigation.
+- [x] Add a pricing link in the top navigation.
   Files: landing page navigation components
-- [ ] Create a shared spinner component for loading states.
+- [x] Create a shared spinner component for loading states.
   Files: `frontend/src/components/ui/spinner.tsx`
-- [ ] Replace plain-text loading states with the spinner.
+- [x] Replace plain-text loading states with the spinner.
   Files: `frontend/src/app/dashboard/page.tsx`, `frontend/src/app/dashboard/audits/page.tsx`
-- [ ] Add retry actions to dashboard and audit error states.
+- [x] Add retry actions to dashboard and audit error states.
   Files: `frontend/src/app/dashboard/page.tsx`, `frontend/src/app/dashboard/audits/page.tsx`
-- [ ] Create a privacy policy page.
+- [x] Create a privacy policy page.
   Files: `frontend/src/app/privacy/page.tsx`
-- [ ] Create a terms of service page.
+- [x] Create a terms of service page.
   Files: `frontend/src/app/terms/page.tsx`
+
+Phase 4 status notes:
+- Code-complete in repo: landing CTA fixes, upload-first positioning, top-nav pricing link, footer legal links, settings cleanup, debug-only reset panel, loading spinner, retry states, legal pages, and audit-report wording cleanup.
+- Still open: visual verification in the browser.
 
 ## Phase 5: DevOps and Observability
 

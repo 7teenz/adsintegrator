@@ -25,6 +25,7 @@ class AuditFindingResponse(BaseModel):
 
 class RecommendationResponse(BaseModel):
     id: str
+    audit_finding_id: str | None = None
     recommendation_key: str
     title: str
     body: str

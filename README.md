@@ -1,21 +1,15 @@
 # Meta Ads Audit (Local MVP)
 
-Deterministic Meta Ads audit SaaS with:
+Local MVP for uploading Meta Ads exports, running a deterministic audit, and reviewing a focused dashboard with AI interpretation layered on top.
+
+This repo includes:
 - FastAPI backend
 - Next.js frontend
 - PostgreSQL + Redis
-- Celery workers for sync jobs
+- Celery workers for audit + sync jobs
 - AI explanation layer that only explains deterministic findings
-
-This repo currently includes:
-- auth + JWT
-- Meta OAuth connection (with local `mock` mode)
-- data sync pipeline (campaigns/ad sets/ads/creatives/insights)
-- CSV history import option from exported Ads Manager reports
-- deterministic audit engine
-- freemium frontend gating
-- local MVP billing mode (no Stripe required)
-- production-hardening baseline (structured logs, retries, health/debug endpoints, tests)
+- local auth, upload, audit, and report loop
+- optional Mailpit/Adminer helpers for local debugging
 
 ## 1. Quick Start (Docker)
 
@@ -30,10 +24,18 @@ cp frontend/.env.example frontend/.env.local
 docker compose up -d --build
 ```
 
+Optional local tools:
+```bash
+docker compose --profile local-tools up -d
+```
+
 3. Open:
 - Frontend: `http://127.0.0.1:3000`
-- Backend docs: `http://127.0.0.1:8000/docs`
 - Health: `http://127.0.0.1:8000/api/health`
+- Mailpit: `http://127.0.0.1:8025`
+- Adminer: `http://127.0.0.1:8080`
+
+Note: backend docs are only available when `DEBUG=true`.
 
 ## 2. Local Run Without Docker
 
@@ -107,17 +109,12 @@ pytest -m smoke -q
 ```
 - Sensitive values (tokens, API keys) must never be logged.
 
-## 7. Local MVP Plan Controls
+## 7. Local MVP Notes
 
-Local-only plan switch endpoint:
-- `POST /api/billing/dev/plan` with body `{"plan_tier":"free|premium|agency"}`
-- available only when `DEBUG=true`
-
-Entitlements are enforced server-side for:
-- findings/report limits
-- history depth
-- chart depth
-- ad account cap
+- Customer-facing billing/upgrade UX is intentionally hidden in this build.
+- Entitlements still exist internally, but the local MVP is presented as a single included experience.
+- Uploaded data stays in the local project environment for this build.
+- Users can clear imported data from inside the app.
 
 ## 8. Environment Notes
 
@@ -129,7 +126,8 @@ Required backend envs:
 
 Optional but recommended:
 - `META_*` for real Meta OAuth (or `META_APP_ID=mock` for local)
-- `AI_*` for OpenAI/Anthropic summaries
+- `AI_*` for OpenAI, Anthropic, or Gemini summaries
+- `SENTRY_*` for optional local error tracking
 
 ## 9. Deployment Topology Notes
 
@@ -160,8 +158,12 @@ Sync stuck/failing:
 - check worker logs and `/api/debug/jobs`
 - check `/api/health/ready`
 
-## 11. Technical Debt (Known)
+## 11. Troubleshooting Local Helpers
 
-- No global multi-tenant admin panel yet (user-scoped debug only)
-- No Stripe production rollout yet (local billing mode only)
-- Observability stack is stdlib logging; no external telemetry exporter yet
+Mailpit and Adminer are local-only helper services. Start them with:
+```bash
+docker compose --profile local-tools up -d
+```
+
+Mailpit captures verification/reset emails locally.
+Adminer provides a lightweight browser UI for the local Postgres database.

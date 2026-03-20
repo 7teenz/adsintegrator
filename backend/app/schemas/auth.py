@@ -26,6 +26,7 @@ class LoginRequest(BaseModel):
 
 class AuthMessageResponse(BaseModel):
     message: str
+    verification_url: str | None = None
 
 
 class AuthSuccessResponse(BaseModel):
@@ -33,6 +34,11 @@ class AuthSuccessResponse(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    model_config = {"str_strip_whitespace": True}
+
+
+class ResendVerificationRequest(BaseModel):
     email: EmailStr
     model_config = {"str_strip_whitespace": True}
 

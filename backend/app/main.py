@@ -4,14 +4,17 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+import sentry_sdk
 from starlette import status
 
 from app.config import get_settings
 from app.logging_config import configure_logging, get_logger
+from app.observability import init_sentry
 from app.routes import audit, auth, billing, debug, health, meta, sync
 
 settings = get_settings()
 configure_logging("INFO")
+init_sentry(settings)
 logger = get_logger(__name__)
 
 app = FastAPI(
@@ -55,10 +58,12 @@ async def request_context_middleware(request: Request, call_next):
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     request_id = getattr(request.state, "request_id", None)
+    sentry_sdk.capture_exception(exc)
     logger.exception(
         "request.failed",
         extra={
             "request_id": request_id,
+            "user_id": getattr(request.state, "user_id", None),
             "code": "INTERNAL_ERROR",
         },
     )
@@ -80,6 +85,9 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     if isinstance(exc.detail, dict):
         detail = exc.detail.get("detail", "Request failed")
         code = exc.detail.get("code", "HTTP_ERROR")
+    if exc.status_code >= 500:
+        sentry_sdk.capture_exception(exc)
+
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -95,6 +103,17 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     request_id = getattr(request.state, "request_id", None)
     details = [f"{'.'.join([str(p) for p in item['loc']])}: {item['msg']}" for item in exc.errors()]
+    logger.warning(
+        "request.validation_failed",
+        extra={
+            "request_id": request_id,
+            "user_id": getattr(request.state, "user_id", None),
+            "code": "VALIDATION_ERROR",
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": status.HTTP_422_UNPROCESSABLE_ENTITY,
+        },
+    )
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={

@@ -154,13 +154,18 @@ class AISummaryService:
         provider = settings.ai_provider.lower().strip()
         api_key = settings.ai_api_key.strip()
 
-        if provider in {"mock", "none"} or not api_key:
+        if api_key and provider in {"", "mock", "none"}:
+            provider = "openai"
+
+        if not api_key or provider in {"mock", "none"}:
             return cls._fallback_output(payload, "provider not configured")
 
         if provider == "openai":
             return cls._openai_request(payload, api_key)
         if provider == "anthropic":
             return cls._anthropic_request(payload, api_key)
+        if provider == "gemini":
+            return cls._gemini_request(payload, api_key)
 
         return cls._fallback_output(payload, f"unknown provider {provider}")
 
@@ -239,6 +244,56 @@ class AISummaryService:
 
         text_blocks = [item.get("text", "") for item in data.get("content", []) if item.get("type") == "text"]
         parsed = json.loads("".join(text_blocks).strip())
+        return cls._validate_output(parsed)
+
+    @classmethod
+    def _gemini_request(cls, payload: dict[str, Any], api_key: str) -> dict[str, str]:
+        url = f"{settings.ai_gemini_base_url.rstrip('/')}/models/{settings.ai_model}:generateContent"
+        user_prompt = (
+            "INPUT JSON:\n"
+            f"{json.dumps(payload, ensure_ascii=True)}\n\n"
+            f"TASK 1:\n{SHORT_TEMPLATE}\n\n"
+            f"TASK 2:\n{DETAILED_TEMPLATE}\n\n"
+            f"TASK 3:\n{ACTION_TEMPLATE}\n\n"
+            "Return strict JSON only."
+        )
+
+        body = {
+            "systemInstruction": {
+                "parts": [{"text": SYSTEM_PROMPT}],
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": user_prompt}],
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+            },
+        }
+
+        with httpx.Client(timeout=float(settings.ai_timeout_seconds)) as client:
+            def _send():
+                response = client.post(
+                    url,
+                    params={"key": api_key},
+                    headers={"Content-Type": "application/json"},
+                    json=body,
+                )
+                response.raise_for_status()
+                return response.json()
+
+            data = with_http_retries(_send, max_attempts=settings.ai_max_retries + 1)
+
+        parts = (
+            data.get("candidates", [{}])[0]
+            .get("content", {})
+            .get("parts", [])
+        )
+        text = "".join(part.get("text", "") for part in parts).strip()
+        parsed = json.loads(text)
         return cls._validate_output(parsed)
 
     @classmethod

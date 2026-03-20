@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import sentry_sdk
+
 from app.celery_app import celery
 from app.database import SessionLocal
 from app.engine.orchestrator import populate_audit_run
@@ -27,6 +29,10 @@ def _run_audit_job(audit_run_id: str, task_id: str) -> None:
         run.job_error = None
         run.celery_task_id = task_id
         db.commit()
+        logger.info(
+            "audit.job_running",
+            extra={"audit_run_id": audit_run_id, "task_id": task_id, "user_id": run.user_id, "code": "AUDIT_RUNNING"},
+        )
 
         populate_audit_run(db, run)
         run = db.query(AuditRun).filter(AuditRun.id == audit_run_id).first()
@@ -39,6 +45,7 @@ def _run_audit_job(audit_run_id: str, task_id: str) -> None:
         db.commit()
         logger.info("audit.completed", extra={"audit_run_id": run.id, "task_id": task_id, "user_id": run.user_id, "code": "AUDIT_COMPLETED"})
     except Exception as exc:
+        sentry_sdk.capture_exception(exc)
         logger.exception("audit.failed", extra={"audit_run_id": audit_run_id, "task_id": task_id, "code": "AUDIT_FAILED"})
         run = db.query(AuditRun).filter(AuditRun.id == audit_run_id).first()
         if run is not None:

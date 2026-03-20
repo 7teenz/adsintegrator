@@ -27,6 +27,19 @@ services:
       timeout: 5s
       retries: 5
 
+  mailpit:
+    image: axllent/mailpit:v1.26
+    restart: unless-stopped
+    profiles: ["local-tools"]
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: ./backend
     restart: unless-stopped
@@ -55,7 +68,7 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
-    command: sh -lc "npm run build && npm run start"
+    command: sh -lc "npm run build && node .next/standalone/server.js"
     ports:
       - "3000:3000"
     env_file:
@@ -65,6 +78,16 @@ services:
       PORT: 3000
     depends_on:
       - backend
+
+  adminer:
+    image: adminer:4
+    restart: unless-stopped
+    profiles: ["local-tools"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:

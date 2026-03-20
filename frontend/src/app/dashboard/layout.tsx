@@ -50,7 +50,7 @@ export default function DashboardLayout({
             <div className="mb-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
               <p className="text-sm font-semibold text-slate-900">Meta Audit</p>
               <Link href="/dashboard/settings" className="text-xs font-semibold text-slate-600">
-                Plan Settings
+                Settings
               </Link>
             </div>
             {children}

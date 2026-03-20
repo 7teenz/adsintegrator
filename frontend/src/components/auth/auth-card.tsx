@@ -23,6 +23,11 @@ interface AuthResponse {
   };
 }
 
+interface AuthMessageResponse {
+  message: string;
+  verification_url?: string | null;
+}
+
 export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -31,6 +36,8 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [verificationUrl, setVerificationUrl] = useState<string | null>(null);
+  const [resendingVerification, setResendingVerification] = useState(false);
 
   const isLogin = mode === "login";
 
@@ -39,13 +46,14 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
     setLoading(true);
     setError("");
     setSuccess("");
+    setVerificationUrl(null);
 
     try {
       const payload = isLogin
         ? { email, password }
         : { email, password, full_name: fullName || undefined };
 
-      const data = await apiFetch<AuthResponse | { message: string }>(isLogin ? "/auth/login" : "/auth/register", {
+      const data = await apiFetch<AuthResponse | AuthMessageResponse>(isLogin ? "/auth/login" : "/auth/register", {
         method: "POST",
         body: JSON.stringify(payload),
         noAuth: true,
@@ -56,12 +64,39 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
         router.push(nextHref);
         router.refresh();
       } else {
-        setSuccess((data as { message: string }).message);
+        const response = data as AuthMessageResponse;
+        setSuccess(response.message);
+        setVerificationUrl(response.verification_url ?? null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    if (!email) {
+      setError("Enter your email first");
+      return;
+    }
+
+    setResendingVerification(true);
+    setError("");
+    setSuccess("");
+    setVerificationUrl(null);
+    try {
+      const data = await apiFetch<AuthMessageResponse>("/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+        noAuth: true,
+      });
+      setSuccess(data.message);
+      setVerificationUrl(data.verification_url ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resend verification");
+    } finally {
+      setResendingVerification(false);
     }
   }
 
@@ -90,6 +125,15 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
       {success ? (
         <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           {success}
+        </div>
+      ) : null}
+
+      {verificationUrl ? (
+        <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">
+          <p>Complete verification before signing in.</p>
+          <Link href={verificationUrl} className="mt-2 inline-block font-medium text-brand-600">
+            Open verification link
+          </Link>
         </div>
       ) : null}
 
@@ -144,12 +188,26 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
         </Link>
       </p>
       {isLogin ? (
-        <p className="mt-2 text-sm text-slate-500">
+        <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-500">
           <Link href="/forgot-password" className="font-medium text-brand-600">
             Forgot password?
           </Link>
-        </p>
+          <button
+            type="button"
+            onClick={handleResendVerification}
+            disabled={resendingVerification}
+            className="font-medium text-brand-600 disabled:opacity-60"
+          >
+            {resendingVerification ? "Sending..." : "Resend verification"}
+          </button>
+        </div>
       ) : null}
+
+      <p className="mt-5 text-xs leading-5 text-slate-500">
+        By using this local MVP build, you agree to the{" "}
+        <Link href="/terms" className="font-medium text-brand-600">Terms</Link> and{" "}
+        <Link href="/privacy" className="font-medium text-brand-600">Privacy Policy</Link>.
+      </p>
     </div>
   );
 }

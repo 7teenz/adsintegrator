@@ -18,16 +18,7 @@ interface SyncJob {
   status: string;
   progress: number;
   current_step: string | null;
-  campaigns_synced: number;
-  ad_sets_synced: number;
-  ads_synced: number;
-  creatives_synced: number;
-  insights_account_synced: number;
-  insights_campaign_synced: number;
-  insights_adset_synced: number;
-  insights_ad_synced: number;
   error_message: string | null;
-  started_at: string | null;
   completed_at: string | null;
   logs: SyncJobLog[];
 }
@@ -62,12 +53,6 @@ interface ReportImportResult {
   warnings: string[];
 }
 
-interface EntitlementsInfo {
-  max_reports_per_month: number;
-  reports_used_last_30_days: number;
-  reports_remaining_last_30_days: number;
-}
-
 interface ConnectionStatus {
   connected: boolean;
 }
@@ -90,6 +75,13 @@ interface FilePreview {
   warnings: string[];
 }
 
+const uploadChecklist = [
+  "30+ days of data gives the clearest audit.",
+  "Daily breakdown rows unlock stronger confidence and trend analysis.",
+  "Include spend, clicks, conversions, campaign, and ad set fields.",
+  "CSV or XLSX exports from Ads Manager work best.",
+];
+
 export function DataSync({ onSyncComplete }: Props) {
   const [summary, setSummary] = useState<DataSummary | null>(null);
   const [activeJob, setActiveJob] = useState<SyncJob | null>(null);
@@ -101,7 +93,6 @@ export function DataSync({ onSyncComplete }: Props) {
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [runningAudit, setRunningAudit] = useState(false);
-  const [quota, setQuota] = useState<EntitlementsInfo | null>(null);
   const [metaConnected, setMetaConnected] = useState(false);
   const [error, setError] = useState("");
   const pollRef = useRef<NodeJS.Timeout | null>(null);
@@ -111,16 +102,7 @@ export function DataSync({ onSyncComplete }: Props) {
       const data = await apiFetch<DataSummary>("/sync/summary");
       setSummary(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sync summary");
-    }
-  }
-
-  async function fetchQuota() {
-    try {
-      const ent = await apiFetch<EntitlementsInfo>("/billing/entitlements");
-      setQuota(ent);
-    } catch {
-      setQuota(null);
+      setError(err instanceof Error ? err.message : "Failed to load import summary");
     }
   }
 
@@ -168,9 +150,10 @@ export function DataSync({ onSyncComplete }: Props) {
 
   useEffect(() => {
     async function init() {
-      await Promise.all([fetchSummary(), fetchStatus(), fetchQuota(), fetchMetaStatus()]);
+      await Promise.all([fetchSummary(), fetchStatus(), fetchMetaStatus()]);
       setLoading(false);
     }
+
     void init();
     return () => stopPolling();
   }, []);
@@ -184,7 +167,6 @@ export function DataSync({ onSyncComplete }: Props) {
         body: JSON.stringify({ sync_type: syncType }),
       });
       setActiveJob(response.job);
-      await fetchSummary();
       startPolling();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start sync");
@@ -208,7 +190,7 @@ export function DataSync({ onSyncComplete }: Props) {
       setUploadResult(result);
       setSelectedFile(null);
       setPreview(null);
-      await Promise.all([fetchSummary(), fetchStatus(), fetchQuota(), fetchMetaStatus()]);
+      await Promise.all([fetchSummary(), fetchStatus()]);
       onSyncComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to import report");
@@ -217,32 +199,29 @@ export function DataSync({ onSyncComplete }: Props) {
     }
   }
 
+  async function pollAuditJob(jobId: string) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const status = await apiFetch<AuditJobStatus>(`/audit/job/${jobId}`);
+      if (status.status === "completed") return;
+      if (status.status === "failed") throw new Error(status.error || "Audit failed");
+    }
+
+    throw new Error("Audit timed out. Please try again.");
+  }
+
   async function handleRunAuditNow() {
     setError("");
     setRunningAudit(true);
     try {
       const job = await apiFetch<AuditJob>("/audit/run", { method: "POST" });
       await pollAuditJob(job.job_id);
-      await fetchQuota();
       onSyncComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to run audit");
     } finally {
       setRunningAudit(false);
     }
-  }
-
-  async function pollAuditJob(jobId: string) {
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      const status = await apiFetch<AuditJobStatus>(`/audit/job/${jobId}`);
-      if (status.status === "completed") return;
-      if (status.status === "failed") {
-        throw new Error(status.error || "Audit failed");
-      }
-    }
-
-    throw new Error("Audit timed out. Please try again.");
   }
 
   async function buildPreview(file: File) {
@@ -265,17 +244,11 @@ export function DataSync({ onSyncComplete }: Props) {
 
     const normalized = headers.map((item) => item.toLowerCase());
     const warnings: string[] = [];
-    if (!normalized.some((item) => item.includes("date") || item.includes("дата") || item.includes("рґр°с‚р°"))) {
-      warnings.push("No date column detected.");
-    }
-    if (!normalized.some((item) => item.includes("campaign") || item.includes("кампан") || item.includes("рєр°рјрї"))) {
-      warnings.push("No campaign column detected.");
-    }
-    if (!normalized.some((item) => item.includes("click") || item.includes("клик") || item.includes("рєр»рёрє"))) {
-      warnings.push("No clicks column detected. CTR/CPC may remain 0.");
-    }
-    if (!normalized.some((item) => item.includes("purchase") || item.includes("conversion") || item.includes("конверс") || item.includes("result") || item.includes("результ"))) {
-      warnings.push("No conversion-style columns detected. Findings may be limited.");
+    if (!normalized.some((item) => item.includes("date"))) warnings.push("No date column detected.");
+    if (!normalized.some((item) => item.includes("campaign"))) warnings.push("No campaign column detected.");
+    if (!normalized.some((item) => item.includes("click"))) warnings.push("No clicks column detected. CTR and CPC may remain weak.");
+    if (!normalized.some((item) => item.includes("purchase") || item.includes("conversion") || item.includes("result"))) {
+      warnings.push("No conversion-style columns detected. The audit may produce lower-confidence recommendations.");
     }
 
     setPreview({ fileName: file.name, kind: "csv", headers: headers.slice(0, 12), warnings });
@@ -290,23 +263,30 @@ export function DataSync({ onSyncComplete }: Props) {
 
   return (
     <section className="space-y-4 rounded-[1.5rem] border border-slate-200 bg-white p-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-600">Primary Input</p>
-          <h2 className="mt-2 text-xl font-semibold text-slate-900">Import Meta Ads history</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Upload raw Facebook Ads exports in CSV or XLSX format to populate dashboard analytics, deterministic audit findings, and the AI explanation layer.
-          </p>
+      <div>
+        <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-600">Primary input</p>
+        <h2 className="mt-2 text-xl font-semibold text-slate-900">Import Meta Ads history</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          The best local MVP path is upload first: import a Meta Ads export, verify the file quality, then run the audit.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-sky-100 bg-sky-50 p-4">
+        <h3 className="text-sm font-semibold text-slate-900">Best file shape for this MVP</h3>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {uploadChecklist.map((item) => (
+            <div key={item} className="rounded-xl bg-white px-3 py-3 text-sm text-slate-700">
+              {item}
+            </div>
+          ))}
         </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Import Facebook Ads report</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              The working local MVP path is upload first, then dashboard review, then audit run.
-            </p>
+            <h3 className="text-sm font-semibold text-slate-900">Import a Meta Ads report</h3>
+            <p className="mt-1 text-xs text-slate-500">CSV and XLSX exports from Ads Manager work best.</p>
           </div>
           <label className="inline-flex cursor-pointer items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
             {uploading ? "Importing..." : "Select CSV or XLSX"}
@@ -332,7 +312,7 @@ export function DataSync({ onSyncComplete }: Props) {
             <p className="font-semibold text-slate-900">Selected file: {preview.fileName}</p>
             <p className="mt-2 text-slate-500">
               {preview.kind === "xlsx"
-                ? "The importer will use the first non-empty worksheet."
+                ? "Workbook preview is limited in-browser. The importer will choose the best worksheet automatically."
                 : `Detected columns: ${preview.headers.join(", ") || "None"}`}
             </p>
             {preview.warnings.length > 0 ? (
@@ -359,19 +339,21 @@ export function DataSync({ onSyncComplete }: Props) {
             onChange={(event) => setReplaceExisting(event.target.checked)}
             className="h-4 w-4 rounded border-slate-300"
           />
-          Replace existing imported history for selected account
+          Replace existing imported history for the selected account
         </label>
 
-        <p className="mt-3 text-xs text-slate-500">
-          Meta connection is optional for now. This MVP should work from uploaded history files alone.
-        </p>
-
         {uploadResult ? (
-          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-            Imported {uploadResult.campaigns} campaigns, {uploadResult.ad_sets} ad sets, {uploadResult.ads} ads, {uploadResult.insight_rows} insight rows.
-            {uploadResult.date_start && uploadResult.date_end ? ` Date range: ${new Date(uploadResult.date_start).toLocaleDateString()} - ${new Date(uploadResult.date_end).toLocaleDateString()}.` : ""}
-            {uploadResult.source_sheet ? ` Sheet: ${uploadResult.source_sheet}.` : ""}
-            {uploadResult.report_type ? ` Report type: ${uploadResult.report_type.replaceAll("_", " ")}.` : ""}
+          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-xs text-emerald-800">
+            <p>
+              Imported {uploadResult.campaigns} campaigns, {uploadResult.ad_sets} ad sets, {uploadResult.ads} ads, and {uploadResult.insight_rows} rows.
+            </p>
+            <p className="mt-1">
+              {uploadResult.date_start && uploadResult.date_end
+                ? `Period: ${new Date(uploadResult.date_start).toLocaleDateString()} to ${new Date(uploadResult.date_end).toLocaleDateString()}. `
+                : ""}
+              {uploadResult.source_sheet ? `Sheet: ${uploadResult.source_sheet}. ` : ""}
+              {uploadResult.report_type ? `Row type: ${uploadResult.report_type.replaceAll("_", " ")}.` : ""}
+            </p>
             {uploadResult.warnings.length > 0 ? (
               <ul className="mt-2 space-y-1 text-amber-800">
                 {uploadResult.warnings.map((warning) => (
@@ -379,15 +361,15 @@ export function DataSync({ onSyncComplete }: Props) {
                 ))}
               </ul>
             ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+            <p className="mt-2 text-slate-700">
+              {uploadResult.report_type === "period_aggregate"
+                ? "This looks like an aggregate export, so the audit will focus on the clearest leaks and skip deeper trend checks."
+                : "This file has the right shape for a stronger diagnostic read."}
+            </p>
+            <div className="mt-3">
               <Button onClick={() => void handleRunAuditNow()} disabled={runningAudit}>
                 {runningAudit ? "Running audit..." : "Run audit now"}
               </Button>
-              {quota ? (
-                <span className="text-slate-600">
-                  Reports left (30 days): {quota.reports_remaining_last_30_days}/{quota.max_reports_per_month}
-                </span>
-              ) : null}
             </div>
           </div>
         ) : null}
@@ -397,9 +379,7 @@ export function DataSync({ onSyncComplete }: Props) {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-900">Optional live Meta sync</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              Keep this secondary. Use it later if you want live syncing instead of manual history uploads.
-            </p>
+            <p className="mt-1 text-xs text-slate-500">Keep this secondary. The local MVP is designed to work well from uploaded exports first.</p>
           </div>
           {metaConnected ? (
             <div className="flex gap-3">
@@ -412,7 +392,7 @@ export function DataSync({ onSyncComplete }: Props) {
             </div>
           ) : (
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-              No live Meta connection active. Upload files instead.
+              No live Meta connection active. Upload a file instead.
             </div>
           )}
         </div>
@@ -435,16 +415,9 @@ export function DataSync({ onSyncComplete }: Props) {
         </div>
       ) : null}
 
-      {syncState === "failed" && activeJob ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
-          <h3 className="font-semibold text-red-900">Sync failed</h3>
-          <p className="mt-1 text-sm text-red-700">{activeJob.error_message || "The worker reported a failure."}</p>
-        </div>
-      ) : null}
-
       {syncState === "completed" && summary ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-          <h3 className="font-semibold text-emerald-900">Data available</h3>
+          <h3 className="font-semibold text-emerald-900">Imported data ready</h3>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               ["Campaigns", summary.campaigns],
@@ -472,7 +445,7 @@ export function DataSync({ onSyncComplete }: Props) {
         <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
           <h3 className="font-semibold text-slate-900">No imported data yet</h3>
           <p className="mt-1 text-sm text-slate-500">
-            Upload a CSV or XLSX export from Facebook Ads Manager to generate dashboard analytics and your first audit report.
+            Upload a Meta Ads export to populate the dashboard and generate the first audit report.
           </p>
         </div>
       ) : null}

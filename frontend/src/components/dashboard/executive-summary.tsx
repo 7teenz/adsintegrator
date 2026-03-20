@@ -18,7 +18,7 @@ export function ExecutiveSummary({ report, compact = false }: Props) {
         Between {formatDate(report.analysis_start)} and {formatDate(report.analysis_end)}, the engine detected {report.findings_count} findings with estimated waste of {formatCurrency(report.total_wasted_spend)} and a modeled uplift opportunity of {formatCurrency(report.total_estimated_uplift)}.
       </p>
       <p className="mt-2 text-sm text-slate-600">
-        This auto-summary is a placeholder block for the upcoming narrative layer. The score and findings are deterministic outputs from your audit rules.
+        This summary is generated from the current audit results and is designed to give a fast read on account health before you dive into the full report.
       </p>
     </section>
   );
