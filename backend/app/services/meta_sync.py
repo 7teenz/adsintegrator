@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy.orm import Session
@@ -135,7 +135,7 @@ class MetaSyncPersistenceService:
             campaign.lifetime_budget = _safe_float(raw.get("lifetime_budget"))
             campaign.source_created_time = _safe_datetime(raw.get("created_time"))
             campaign.source_updated_time = _safe_datetime(raw.get("updated_time"))
-            campaign.synced_at = datetime.utcnow()
+            campaign.synced_at = datetime.now(timezone.utc)
             count += 1
         db.flush()
         return count
@@ -178,7 +178,7 @@ class MetaSyncPersistenceService:
             ad_set.lifetime_budget = _safe_float(raw.get("lifetime_budget"))
             ad_set.source_created_time = _safe_datetime(raw.get("created_time"))
             ad_set.source_updated_time = _safe_datetime(raw.get("updated_time"))
-            ad_set.synced_at = datetime.utcnow()
+            ad_set.synced_at = datetime.now(timezone.utc)
             count += 1
         db.flush()
         return count
@@ -207,7 +207,7 @@ class MetaSyncPersistenceService:
             creative.effective_object_story_id = raw.get("effective_object_story_id")
             creative.object_story_spec_json = _safe_json(raw.get("object_story_spec"))
             creative.asset_feed_spec_json = _safe_json(raw.get("asset_feed_spec"))
-            creative.synced_at = datetime.utcnow()
+            creative.synced_at = datetime.now(timezone.utc)
             count += 1
         db.flush()
         return count
@@ -252,7 +252,7 @@ class MetaSyncPersistenceService:
             ad.status = raw.get("status")
             ad.source_created_time = _safe_datetime(raw.get("created_time"))
             ad.source_updated_time = _safe_datetime(raw.get("updated_time"))
-            ad.synced_at = datetime.utcnow()
+            ad.synced_at = datetime.now(timezone.utc)
             count += 1
         db.flush()
         return count
@@ -521,7 +521,7 @@ def _upsert_insights(db: Session, model, existing_map: dict, rows: list[dict], b
             db.add(row)
         for key, value in _metrics_from_raw(raw).items():
             setattr(row, key, value)
-        row.synced_at = datetime.utcnow()
+        row.synced_at = datetime.now(timezone.utc)
         count += 1
     db.flush()
     return count
@@ -546,7 +546,7 @@ def _upsert_entity_insights(db: Session, model, rows: list[dict], existing_map: 
             db.add(row)
         for key, value in _metrics_from_raw(raw).items():
             setattr(row, key, value)
-        row.synced_at = datetime.utcnow()
+        row.synced_at = datetime.now(timezone.utc)
         count += 1
     db.flush()
     return count

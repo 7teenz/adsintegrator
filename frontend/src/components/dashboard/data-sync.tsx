@@ -76,10 +76,10 @@ interface FilePreview {
 }
 
 const uploadChecklist = [
-  "30+ days of data gives the clearest audit.",
-  "Daily breakdown rows unlock stronger confidence and trend analysis.",
-  "Include spend, clicks, conversions, campaign, and ad set fields.",
-  "CSV or XLSX exports from Ads Manager work best.",
+  "My export covers 30 or more days.",
+  "I selected 'Daily' breakdown (not 'Monthly' or 'Summary').",
+  "The export includes spend, clicks, conversions, and ad set columns.",
+  "I exported from Ads Manager as CSV or XLSX.",
 ];
 
 export function DataSync({ onSyncComplete }: Props) {
@@ -89,6 +89,7 @@ export function DataSync({ onSyncComplete }: Props) {
   const [starting, setStarting] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(false);
+  const [checklist, setChecklist] = useState<boolean[]>(uploadChecklist.map(() => false));
   const [uploadResult, setUploadResult] = useState<ReportImportResult | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -267,17 +268,30 @@ export function DataSync({ onSyncComplete }: Props) {
         <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-600">Primary input</p>
         <h2 className="mt-2 text-xl font-semibold text-slate-900">Import Meta Ads history</h2>
         <p className="mt-1 text-sm text-slate-500">
-          The best local MVP path is upload first: import a Meta Ads export, verify the file quality, then run the audit.
+          Upload first: import a Meta Ads export, verify the file quality, then run the audit.
         </p>
       </div>
 
       <div className="rounded-2xl border border-sky-100 bg-sky-50 p-4">
-        <h3 className="text-sm font-semibold text-slate-900">Best file shape for this MVP</h3>
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
-          {uploadChecklist.map((item) => (
-            <div key={item} className="rounded-xl bg-white px-3 py-3 text-sm text-slate-700">
-              {item}
-            </div>
+        <div className="flex items-center justify-between gap-4">
+          <h3 className="text-sm font-semibold text-slate-900">Before you upload — quick check</h3>
+          {checklist.every(Boolean) ? (
+            <span className="rounded-full bg-emerald-100 px-3 py-0.5 text-xs font-semibold text-emerald-700">Ready to import</span>
+          ) : (
+            <span className="text-xs text-slate-400">{checklist.filter(Boolean).length}/{uploadChecklist.length} checked</span>
+          )}
+        </div>
+        <div className="mt-3 space-y-2">
+          {uploadChecklist.map((item, index) => (
+            <label key={item} className="flex cursor-pointer items-start gap-3 rounded-xl bg-white px-3 py-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={checklist[index]}
+                onChange={() => setChecklist((prev) => prev.map((v, i) => (i === index ? !v : v)))}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 accent-sky-600"
+              />
+              <span className={checklist[index] ? "line-through text-slate-400" : ""}>{item}</span>
+            </label>
           ))}
         </div>
       </div>
@@ -379,7 +393,7 @@ export function DataSync({ onSyncComplete }: Props) {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-900">Optional live Meta sync</h3>
-            <p className="mt-1 text-xs text-slate-500">Keep this secondary. The local MVP is designed to work well from uploaded exports first.</p>
+            <p className="mt-1 text-xs text-slate-500">Keep this secondary. Uploaded exports are the recommended primary data source.</p>
           </div>
           {metaConnected ? (
             <div className="flex gap-3">

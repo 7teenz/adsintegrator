@@ -24,8 +24,8 @@ def test_compute_scores_is_deterministic_and_bounded():
         _finding(Severity.HIGH, Category.BUDGET, 2.0),
         _finding(Severity.MEDIUM, Category.TREND, 0.0),
     ]
-    score_a, pillars_a = compute_scores(findings, "Account summary")
-    score_b, pillars_b = compute_scores(findings, "Account summary")
+    score_a, pillars_a = compute_scores(findings, "Account summary", total_spend=5000.0, analysis_days=30)
+    score_b, pillars_b = compute_scores(findings, "Account summary", total_spend=5000.0, analysis_days=30)
 
     assert score_a == score_b
     assert 0.0 <= score_a <= 100.0

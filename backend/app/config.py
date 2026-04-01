@@ -11,11 +11,11 @@ class Settings(BaseSettings):
     debug: bool = False
     database_url: str = "postgresql://postgres:postgres@postgres:5432/meta_ads_audit"
 
-    secret_key: str = "local-dev-change-me"
+    secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=60, ge=5, le=1440)
 
-    encryption_key: str = "X7v0bRrKp5Kz8mQ3Z9xY2wA1cD4eF6gH8iJ0kL2mN4o="
+    encryption_key: str
 
     redis_url: str = "redis://redis:6379/0"
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]

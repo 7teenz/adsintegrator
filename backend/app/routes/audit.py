@@ -1,12 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import Counter
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.database import get_db
 from app.engine.collector import collect_account_data
+from app.engine.scoring import PILLARS
 from app.logging_config import get_logger
 from app.middleware.deps import get_current_user
 from app.models.audit import AuditRun
@@ -35,26 +37,11 @@ from app.services.meta_ads import MetaAdsService
 from app.services.meta_auth import MetaAuthService
 from app.services.rate_limit import enforce_rate_limit
 from app.tasks.audit import run_audit_job
+from app.routes.helpers import get_selected_account as _get_selected_account
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 settings = get_settings()
 logger = get_logger(__name__)
-
-
-def _get_selected_account(db: Session, user_id: str):
-    connection = MetaAuthService.get_connection(db, user_id)
-    if not connection:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"detail": "No Meta connection", "code": "META_NOT_CONNECTED"},
-        )
-    account = MetaAdsService.get_selected_account(db, connection.id)
-    if not account:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"detail": "No ad account selected", "code": "META_ACCOUNT_NOT_SELECTED"},
-        )
-    return account
 
 
 def _safe_pct_delta(current: float, previous: float) -> float:
@@ -158,10 +145,47 @@ def _score_response(score, findings_count: int) -> AuditScoreResponse:
         description=score.details,
         details=score.details,
         findings_count=findings_count,
+        strongest_issue=None,
     )
 
 
-def _finding_response(finding) -> AuditFindingResponse:
+def _derive_finding_confidence(finding, run: AuditRun) -> tuple[str, str]:
+    analysis_days = max(1, (run.analysis_end - run.analysis_start).days + 1)
+    total_spend = run.total_spend or 0.0
+
+    if analysis_days <= 3:
+        return "Low", "The analysis window is very short, so treat this as an early warning signal."
+    if total_spend < 150 and finding.estimated_waste == 0 and finding.estimated_uplift == 0:
+        return "Low", "Spend is light, so the issue is real but dollar impact cannot be modeled confidently yet."
+    if finding.metric_value is None:
+        return "Medium", "The signal is structurally meaningful, but it is based on broader account context rather than one direct threshold."
+    if analysis_days >= 30 and total_spend >= 1000:
+        return "High", "This finding is backed by a longer dataset with enough spend to treat it as decision-grade."
+    if analysis_days >= 14 and total_spend >= 300:
+        return "Medium", "The signal is directionally reliable, but more history or spend would make it stronger."
+    return "Low", "The issue is worth investigating, but the current dataset is still relatively sparse."
+
+
+def _derive_inspection_target(finding) -> str:
+    category = (finding.category or "").lower()
+    key = (finding.recommendation_key or "").lower()
+    title = f"{finding.title} {finding.description}".lower()
+
+    if "conversion" in title or "tracking" in key or "cpa" in category:
+        return "Inspect conversion tracking, landing-page continuity, and the post-click funnel first."
+    if "frequency" in category or "fatigue" in title:
+        return "Inspect creative rotation, audience overlap, and fatigue across the affected ad sets."
+    if "ctr" in category or "click" in title:
+        return "Inspect creative hooks, audience targeting, and offer-message fit."
+    if "budget" in category or "spend" in category:
+        return "Inspect budget allocation, sibling efficiency, and whether spend is concentrated in weak segments."
+    if "structure" in category or "placement" in category:
+        return "Inspect campaign naming, segmentation logic, placement mix, and optimization settings."
+    return "Inspect the affected entity in Ads Manager and compare the weak metric against nearby peers before changing budget."
+
+
+def _finding_response(finding, run: AuditRun) -> AuditFindingResponse:
+    confidence_label, confidence_reason = _derive_finding_confidence(finding, run)
     return AuditFindingResponse(
         id=finding.id,
         rule_id=finding.rule_id,
@@ -180,6 +204,9 @@ def _finding_response(finding) -> AuditFindingResponse:
         estimated_uplift=finding.estimated_uplift,
         recommendation_key=finding.recommendation_key,
         score_impact=finding.score_impact,
+        confidence_label=confidence_label,
+        confidence_reason=confidence_reason,
+        inspection_target=_derive_inspection_target(finding),
     )
 
 
@@ -203,9 +230,28 @@ def _ai_summary_response(summary, include_detailed: bool = True) -> AuditAISumma
 
 
 def _serialize(run: AuditRun, entitlements: Entitlements) -> AuditRunResponse:
-    findings_rows = [_finding_response(finding) for finding in run.findings]
+    findings_rows = [_finding_response(finding, run) for finding in run.findings]
     rec_rows = [RecommendationResponse.model_validate(item) for item in run.recommendations]
-    score_rows = [_score_response(score, 0) for score in run.scores]
+    finding_map = {score_key: [] for score_key in PILLARS}
+    for finding in run.findings:
+        for score_key, (_, _, categories) in PILLARS.items():
+            if finding.category in {category.value for category in categories}:
+                finding_map[score_key].append(finding)
+    score_rows = [
+        AuditScoreResponse(
+            id=score.id,
+            score_key=score.score_key,
+            label=score.label,
+            name=score.label,
+            score=score.score,
+            weight=score.weight,
+            description=score.details,
+            details=score.details,
+            findings_count=len(finding_map.get(score.score_key, [])),
+            strongest_issue=(finding_map.get(score.score_key) or [None])[0].title if finding_map.get(score.score_key) else None,
+        )
+        for score in run.scores
+    ]
     return AuditRunResponse(
         id=run.id,
         health_score=run.health_score,
@@ -277,7 +323,7 @@ def run_new_audit(request: Request, current_user: User = Depends(get_current_use
         user_id=current_user.id,
     )
     account = _get_selected_account(db, current_user.id)
-    now = datetime.utcnow().date()
+    now = datetime.now(timezone.utc).date()
     run = AuditRun(
         user_id=current_user.id,
         ad_account_id=account.id,
@@ -427,19 +473,42 @@ def get_audit_dashboard(current_user: User = Depends(get_current_user), db: Sess
         for row in reversed(trend_rows)
     ]
 
+    campaign_agg = (
+        db.query(
+            DailyCampaignInsight.campaign_id,
+            func.sum(DailyCampaignInsight.spend).label("total_spend"),
+            func.avg(DailyCampaignInsight.roas).label("avg_roas"),
+            func.sum(DailyCampaignInsight.conversions).label("total_conversions"),
+            func.avg(DailyCampaignInsight.ctr).label("avg_ctr"),
+        )
+        .group_by(DailyCampaignInsight.campaign_id)
+        .subquery()
+    )
     worst_campaigns = (
-        db.query(Campaign, DailyCampaignInsight)
-        .join(DailyCampaignInsight, DailyCampaignInsight.campaign_id == Campaign.id)
+        db.query(Campaign, campaign_agg)
+        .join(campaign_agg, campaign_agg.c.campaign_id == Campaign.id)
         .filter(Campaign.ad_account_id == account.id)
-        .order_by(DailyCampaignInsight.roas.asc(), DailyCampaignInsight.spend.desc())
+        .order_by(campaign_agg.c.avg_roas.asc(), campaign_agg.c.total_spend.desc())
         .limit(5)
         .all()
     )
+
+    adset_agg = (
+        db.query(
+            DailyAdSetInsight.ad_set_id,
+            func.sum(DailyAdSetInsight.spend).label("total_spend"),
+            func.avg(DailyAdSetInsight.roas).label("avg_roas"),
+            func.sum(DailyAdSetInsight.conversions).label("total_conversions"),
+            func.avg(DailyAdSetInsight.ctr).label("avg_ctr"),
+        )
+        .group_by(DailyAdSetInsight.ad_set_id)
+        .subquery()
+    )
     worst_adsets = (
-        db.query(AdSet, DailyAdSetInsight)
-        .join(DailyAdSetInsight, DailyAdSetInsight.ad_set_id == AdSet.id)
+        db.query(AdSet, adset_agg)
+        .join(adset_agg, adset_agg.c.ad_set_id == AdSet.id)
         .filter(AdSet.ad_account_id == account.id)
-        .order_by(DailyAdSetInsight.roas.asc(), DailyAdSetInsight.spend.desc())
+        .order_by(adset_agg.c.avg_roas.asc(), adset_agg.c.total_spend.desc())
         .limit(5)
         .all()
     )
@@ -456,23 +525,23 @@ def get_audit_dashboard(current_user: User = Depends(get_current_user), db: Sess
             LeaderboardItemResponse(
                 entity_id=campaign.meta_campaign_id,
                 entity_name=campaign.name,
-                spend=insight.spend,
-                roas=insight.roas,
-                cpa=insight.spend / max(insight.conversions, 1) if insight.conversions > 0 else 0.0,
-                ctr=insight.ctr,
+                spend=float(agg.total_spend or 0),
+                roas=float(agg.avg_roas or 0),
+                cpa=float(agg.total_spend or 0) / max(int(agg.total_conversions or 0), 1) if (agg.total_conversions or 0) > 0 else 0.0,
+                ctr=float(agg.avg_ctr or 0),
             )
-            for campaign, insight in worst_campaigns
+            for campaign, agg in worst_campaigns
         ],
         worst_adsets=[
             LeaderboardItemResponse(
                 entity_id=adset.meta_adset_id,
                 entity_name=adset.name,
-                spend=insight.spend,
-                roas=insight.roas,
-                cpa=insight.spend / max(insight.conversions, 1) if insight.conversions > 0 else 0.0,
-                ctr=insight.ctr,
+                spend=float(agg.total_spend or 0),
+                roas=float(agg.avg_roas or 0),
+                cpa=float(agg.total_spend or 0) / max(int(agg.total_conversions or 0), 1) if (agg.total_conversions or 0) > 0 else 0.0,
+                ctr=float(agg.avg_ctr or 0),
             )
-            for adset, insight in worst_adsets
+            for adset, agg in worst_adsets
         ],
     )
 
@@ -482,7 +551,7 @@ def get_latest_findings(current_user: User = Depends(get_current_user), db: Sess
     run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         return []
-    return [_finding_response(finding) for finding in run.findings]
+    return [_finding_response(finding, run) for finding in run.findings]
 
 
 @router.get("/latest/score", response_model=list[AuditScoreResponse])
@@ -490,7 +559,7 @@ def get_latest_score(current_user: User = Depends(get_current_user), db: Session
     run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         return []
-    return [_score_response(score, 0) for score in run.scores]
+    return _serialize(run, EntitlementService.get_entitlements(db, current_user.id)).scores
 
 
 @router.get("/history", response_model=list[AuditSummaryResponse])

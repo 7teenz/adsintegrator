@@ -8,6 +8,7 @@ export interface ScoreBreakdown {
   description: string;
   details: string;
   findings_count: number;
+  strongest_issue?: string | null;
 }
 
 export interface AuditFinding {
@@ -28,6 +29,9 @@ export interface AuditFinding {
   estimated_uplift: number;
   recommendation_key: string | null;
   score_impact: number;
+  confidence_label: "High" | "Medium" | "Low" | string;
+  confidence_reason: string;
+  inspection_target: string;
 }
 
 export interface Recommendation {

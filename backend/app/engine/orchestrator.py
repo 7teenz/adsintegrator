@@ -49,9 +49,12 @@ def populate_audit_run(db: Session, audit_run: AuditRun) -> AuditRun:
     findings = [apply_recommendation(finding) for finding in findings]
     findings.sort(key=lambda finding: SEVERITY_ORDER[finding.severity])
 
+    analysis_days = max(1, (snapshot.analysis_end - snapshot.analysis_start).days + 1)
     health_score, scores = compute_scores(
         findings,
         account_description=f"Account spend ${snapshot.account.total_spend:.0f}, CTR {snapshot.account.ctr:.2f}% and ROAS {snapshot.account.roas:.2f}x.",
+        total_spend=snapshot.account.total_spend,
+        analysis_days=analysis_days,
     )
 
     total_wasted = min(snapshot.account.total_spend, sum(finding.estimated_waste for finding in findings))
@@ -98,20 +101,15 @@ def populate_audit_run(db: Session, audit_run: AuditRun) -> AuditRun:
         finding_rows.append(row)
     db.flush()
 
-    recommendation_map = {}
     for row, finding in zip(finding_rows, findings):
-        key = finding.recommendation_key or finding.rule_id
-        if key in recommendation_map:
-            continue
         recommendation = Recommendation(
             audit_run_id=audit_run.id,
             audit_finding_id=row.id,
-            recommendation_key=key,
+            recommendation_key=finding.recommendation_key or finding.rule_id,
             title=finding.recommendation_title,
             body=finding.recommendation_body,
         )
         db.add(recommendation)
-        recommendation_map[key] = recommendation
 
     for score in scores:
         db.add(AuditScore(

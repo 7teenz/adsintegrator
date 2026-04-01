@@ -170,36 +170,37 @@ Phase 4 status notes:
 
 ## Phase 5: DevOps and Observability
 
-- [ ] Add a production backend environment example.
+- [x] Add a production backend environment example.
   Files: `backend/.env.production.example`
 - [ ] Set production values for `DEBUG`, `ENVIRONMENT`, database, Redis, Meta, AI, SMTP, CORS, frontend URL, and Sentry.
   Files: production environment config
 - [ ] Add frontend production environment values.
   Files: `frontend/.env.production`
-- [ ] Disable FastAPI docs, ReDoc, and OpenAPI in production.
+- [x] Disable FastAPI docs, ReDoc, and OpenAPI in production.
   Files: `backend/app/main.py`
-- [ ] Add rate limiting dependencies.
+- [x] Add rate limiting dependencies.
   Files: `backend/requirements.txt`
 - [ ] Configure global rate limiting middleware and handlers.
-  Files: `backend/app/main.py`
-- [ ] Rate-limit auth endpoints.
+  Files: `backend/app/main.py` (currently per-endpoint; global middleware not yet added)
+- [x] Rate-limit auth endpoints.
   Files: `backend/app/routes/auth.py`
-- [ ] Rate-limit upload endpoints.
+- [x] Rate-limit upload endpoints.
   Files: `backend/app/routes/sync.py`
-- [ ] Rate-limit audit run endpoints.
+- [x] Rate-limit audit run endpoints.
   Files: `backend/app/routes/audit.py`
-- [ ] Add backend Sentry integration.
-  Files: `backend/requirements.txt`, `backend/app/main.py`
-- [ ] Add frontend Sentry integration.
-  Files: `frontend/package.json`, `frontend/src/app/layout.tsx`
-- [ ] Fix the worst-performers query to aggregate before joining.
+- [x] Add backend Sentry integration.
+  Files: `backend/requirements.txt`, `backend/app/main.py`, `backend/app/observability.py`
+- [x] Add frontend Sentry integration.
+  Files: `frontend/package.json`, `frontend/src/components/app/sentry-init.tsx`
+  Note: Sentry DSN is not configured yet — set `SENTRY_DSN` in `.env` to activate.
+- [x] Fix the worst-performers query to aggregate before joining.
   Files: `backend/app/routes/audit.py`
-- [ ] Convert the frontend Docker build to a multi-stage image.
+- [x] Convert the frontend Docker build to a multi-stage image.
   Files: `frontend/Dockerfile`
-- [ ] Remove the runtime frontend build command override from Compose.
+- [x] Remove the runtime frontend build command override from Compose.
   Files: `docker-compose.yml`
-- [ ] Enable Redis authentication and append-only persistence.
-  Files: `docker-compose.yml`, Redis configuration
+- [x] Enable Redis append-only persistence; password support added via `REDIS_PASSWORD` env var.
+  Files: `docker-compose.yml`
 
 ## Deferred: Stripe and Billing
 

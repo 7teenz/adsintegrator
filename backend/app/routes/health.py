@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import redis
 from fastapi import APIRouter, Depends, status
@@ -16,7 +16,7 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health")
 def health_check():
-    return {"status": "healthy", "service": "meta-ads-audit-api", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "healthy", "service": "meta-ads-audit-api", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @router.get("/health/db")

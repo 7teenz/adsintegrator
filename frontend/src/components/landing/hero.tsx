@@ -12,7 +12,7 @@ export function Hero() {
       <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
         <div>
           <div className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sm text-sky-700">
-            Local MVP Meta audit
+            Meta Ads Audit
           </div>
           <h1 className="mt-6 max-w-4xl text-5xl font-bold tracking-tight text-slate-900 sm:text-6xl">
             Find wasted Meta Ads spend and the fixes most likely to improve results.

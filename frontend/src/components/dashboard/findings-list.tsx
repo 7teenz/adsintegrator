@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { AuditFinding, Recommendation, formatCurrency } from "@/lib/audit";
+import { AuditFinding, Recommendation, formatCurrency, formatFindingMetric } from "@/lib/audit";
 
 interface Props {
   findings: AuditFinding[];
@@ -17,20 +17,6 @@ const severityConfig: Record<string, { badge: string; label: string }> = {
   medium: { badge: "bg-amber-100 text-amber-700", label: "Medium" },
   low: { badge: "bg-sky-100 text-sky-700", label: "Low" },
 };
-
-function formatMetric(value: number, category: string): string {
-  const normalized = category.toLowerCase();
-  if (category === "PERFORMANCE" || normalized.includes("ctr")) {
-    return `${(value * 100).toFixed(2)}%`;
-  }
-  if (category === "BUDGET" || normalized.includes("spend")) {
-    return `$${value.toLocaleString()}`;
-  }
-  if (category === "FREQUENCY") {
-    return `${value.toFixed(2)}x`;
-  }
-  return value.toFixed(2);
-}
 
 export function FindingsList({ findings, recommendations = [], maxItems, title = "Findings" }: Props) {
   const categories = ["All", ...Array.from(new Set(findings.map((finding) => finding.category)))];
@@ -82,17 +68,34 @@ export function FindingsList({ findings, recommendations = [], maxItems, title =
                     {finding.metric_value !== null ? (
                       <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
                         <span className="text-slate-500">Actual</span>
-                        <span className="font-semibold text-rose-700">{formatMetric(finding.metric_value, finding.category)}</span>
+                        <span className="font-semibold text-rose-700">{formatFindingMetric(finding.metric_value, finding.category)}</span>
                         {finding.threshold_value !== null ? (
                           <>
                             <span className="text-slate-300">vs</span>
                             <span className="text-slate-500">Threshold</span>
-                            <span className="font-semibold text-slate-700">{formatMetric(finding.threshold_value, finding.category)}</span>
+                            <span className="font-semibold text-slate-700">{formatFindingMetric(finding.threshold_value, finding.category)}</span>
                           </>
                         ) : null}
                       </div>
                     ) : null}
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <span
+                        className={`rounded-full px-2 py-1 font-semibold ${
+                          finding.confidence_label === "High"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : finding.confidence_label === "Medium"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {finding.confidence_label} confidence
+                      </span>
+                      <span className="text-slate-500">{finding.confidence_reason}</span>
+                    </div>
                     <p className="mt-1 text-xs text-slate-500">{finding.entity_name || finding.affected_entity}</p>
+                    <p className="mt-2 text-xs text-slate-600">
+                      <span className="font-semibold text-slate-700">Inspect next:</span> {finding.inspection_target}
+                    </p>
                   </div>
                   <div className="text-right text-xs">
                     <p className="text-rose-700">Waste {formatCurrency(finding.estimated_waste)}</p>

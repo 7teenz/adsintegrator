@@ -55,7 +55,7 @@ export default function SettingsPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Account & Data</p>
         <h1 className="mt-2 text-3xl font-semibold text-slate-900">Settings</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          This local MVP includes the full audit experience in a single plan. Advanced billing is not enabled in this build.
+          The full audit experience is included in your current plan. Advanced billing features are not enabled yet.
         </p>
       </section>
 
@@ -78,7 +78,7 @@ export default function SettingsPage() {
               Name: <span className="font-semibold text-slate-900">{user?.full_name || "Not provided"}</span>
             </p>
             <p>
-              Access: <span className="font-semibold text-slate-900">Included in this MVP</span>
+              Access: <span className="font-semibold text-slate-900">Full access</span>
             </p>
           </div>
         </article>
@@ -87,7 +87,7 @@ export default function SettingsPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Privacy</p>
           <h2 className="mt-2 text-xl font-semibold text-slate-900">How this build handles data</h2>
           <div className="mt-4 space-y-3 text-sm text-slate-600">
-            <p>Your uploaded Meta Ads exports stay inside this local project environment for the MVP build.</p>
+            <p>Your uploaded Meta Ads exports stay inside this project environment and are not shared with third parties.</p>
             <p>You can remove imported data and audits at any time from this page.</p>
             <div className="flex flex-wrap gap-3 pt-1">
               <Link href="/privacy" className="font-semibold text-sky-700 hover:text-sky-800">Privacy policy</Link>
@@ -117,7 +117,7 @@ export default function SettingsPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-700">Danger zone</p>
         <h2 className="mt-2 text-xl font-semibold text-slate-900">Delete account</h2>
         <p className="mt-2 max-w-2xl text-sm text-slate-700">
-          This permanently deletes your account and all related data. Use this only if you want to fully remove your local MVP workspace data for this user.
+          This permanently deletes your account and all related data. This action cannot be undone.
         </p>
         <button
           type="button"

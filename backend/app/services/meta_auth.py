@@ -1,6 +1,6 @@
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
@@ -44,8 +44,8 @@ class MetaAuthService:
         state = secrets.token_urlsafe(32)
         connection = cls._get_or_create_connection(db, user_id)
         connection.oauth_state_hash = cls._hash_state(state)
-        connection.oauth_state_expires_at = datetime.utcnow() + timedelta(minutes=settings.meta_state_ttl_minutes)
-        connection.updated_at = datetime.utcnow()
+        connection.oauth_state_expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.meta_state_ttl_minutes)
+        connection.updated_at = datetime.now(timezone.utc)
         db.commit()
 
         params = {
@@ -62,7 +62,7 @@ class MetaAuthService:
         connection = db.query(MetaConnection).filter(MetaConnection.user_id == user_id).first()
         if connection is None or connection.oauth_state_hash is None or connection.oauth_state_expires_at is None:
             raise ValueError("Missing OAuth session. Start the Meta connection flow again.")
-        if connection.oauth_state_expires_at < datetime.utcnow():
+        if connection.oauth_state_expires_at < datetime.now(timezone.utc):
             raise ValueError("OAuth session expired. Start the Meta connection flow again.")
         if connection.oauth_state_hash != cls._hash_state(state):
             raise ValueError("Invalid OAuth state. Start the Meta connection flow again.")
@@ -129,7 +129,7 @@ class MetaAuthService:
         expires_at = None
         expires_in = token_data.get("expires_in")
         if expires_in:
-            expires_at = datetime.utcnow() + timedelta(seconds=int(expires_in))
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
         connection.meta_user_id = token_data["meta_user_id"]
         connection.meta_user_name = token_data.get("meta_user_name")
@@ -138,7 +138,7 @@ class MetaAuthService:
         connection.scopes = token_data.get("scopes", settings.meta_oauth_scopes)
         connection.oauth_state_hash = None
         connection.oauth_state_expires_at = None
-        connection.updated_at = datetime.utcnow()
+        connection.updated_at = datetime.now(timezone.utc)
 
         db.add(connection)
         db.commit()

@@ -33,7 +33,7 @@ export function Sidebar() {
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <p className="text-lg font-bold tracking-tight text-slate-900">Meta Audit</p>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">local MVP</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">Beta</span>
         </div>
         <p className="mt-2 text-xs text-slate-500">Upload an export, audit the account, and review the highest-impact fixes.</p>
       </div>

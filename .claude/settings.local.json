@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/engine/ tests/test_scoring_engine.py -v --tb=short)",
+      "Bash(python -m pytest tests/engine/test_rules.py::TestLowCTRRule -v --tb=short --no-header)",
+      "Bash(python -c \":*)",
+      "Bash(python -m pytest tests/engine/test_rules.py::TestLowCTRRule -v --tb=short --ignore=tests/conftest.py --override-ini=\"python_files=test_*.py\" -p no:cacheprovider)",
+      "Bash(timeout 20 python -c \":*)",
+      "Bash(timeout 10 python -c \":*)",
+      "Bash(timeout 15 python -c \":*)",
+      "Bash(python -c \"import magic; print\\(magic.__file__\\)\")",
+      "Bash(python -c \"import os; os.environ.setdefault\\(''DATABASE_URL'',''sqlite:///./test.db''\\); os.environ.setdefault\\(''SECRET_KEY'',''test''\\); os.environ.setdefault\\(''ENCRYPTION_KEY'',''svJt37a4pzcIQ91auVTrJU5Wo9VrfTZ548d2SkkT2tc=''\\); os.environ.setdefault\\(''DEBUG'',''true''\\); os.environ.setdefault\\(''META_APP_ID'',''mock''\\); from app.engine import rules; print\\(''engine rules imported OK''\\)\")",
+      "Bash(python -c \"import os; os.environ.setdefault\\(''DATABASE_URL'',''sqlite:///./test.db''\\); os.environ.setdefault\\(''SECRET_KEY'',''test''\\); os.environ.setdefault\\(''ENCRYPTION_KEY'',''svJt37a4pzcIQ91auVTrJU5Wo9VrfTZ548d2SkkT2tc=''\\); os.environ.setdefault\\(''DEBUG'',''true''\\); os.environ.setdefault\\(''META_APP_ID'',''mock''\\); from tests.engine.fixtures import healthy_snapshot; s = healthy_snapshot\\(\\); print\\(''fixture OK'', len\\(s.campaigns\\), ''campaigns''\\)\")",
+      "Bash(timeout 30 python -m pytest tests/engine/ -v --tb=short --no-header -p no:warnings)",
+      "Bash(timeout 20 python -m pytest tests/engine/test_rules.py -v --tb=short --no-header -p no:warnings --collect-only)",
+      "Bash(timeout 5 python -c \":*)",
+      "Bash(python -c \"import os; os.environ[''DATABASE_URL'']=''sqlite:///./test.db''; os.environ[''SECRET_KEY'']=''test''; os.environ[''ENCRYPTION_KEY'']=''svJt37a4pzcIQ91auVTrJU5Wo9VrfTZ548d2SkkT2tc=''; os.environ[''DEBUG'']=''true''; os.environ[''META_APP_ID'']=''mock''; from app.services.csv_import import CsvImportService; print\\(''ok''\\)\")",
+      "Bash(python -c \"import os; os.environ[''DATABASE_URL'']=''sqlite:///./test.db''; os.environ[''SECRET_KEY'']=''test''; os.environ[''ENCRYPTION_KEY'']=''svJt37a4pzcIQ91auVTrJU5Wo9VrfTZ548d2SkkT2tc=''; os.environ[''DEBUG'']=''true''; os.environ[''META_APP_ID'']=''mock''; from app.main import app; print\\(''app imported ok''\\)\")",
+      "Bash(python -m pytest tests/engine/ tests/test_scoring_engine.py -v --tb=short --no-header)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}

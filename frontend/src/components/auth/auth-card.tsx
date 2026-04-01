@@ -204,7 +204,7 @@ export function AuthCard({ mode, nextHref = "/dashboard" }: AuthCardProps) {
       ) : null}
 
       <p className="mt-5 text-xs leading-5 text-slate-500">
-        By using this local MVP build, you agree to the{" "}
+        By using this product, you agree to the{" "}
         <Link href="/terms" className="font-medium text-brand-600">Terms</Link> and{" "}
         <Link href="/privacy" className="font-medium text-brand-600">Privacy Policy</Link>.
       </p>

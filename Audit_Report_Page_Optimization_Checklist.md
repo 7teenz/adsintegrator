@@ -15,19 +15,19 @@ Turn the audit report page into a clear executive-grade Meta Ads audit experienc
 
 ## 1. Above-The-Fold Executive Layer
 
-- [ ] Keep the top section focused on four answers only:
+- [x] Keep the top section focused on four answers only:
   - health of the account
   - spend at risk
   - biggest leak
   - what to fix first
-- [ ] Replace any generic top copy with a one-line executive verdict.
-- [ ] Keep only these four KPI cards above the fold:
+- [x] Replace any generic top copy with a one-line executive verdict.
+- [x] Keep only these four KPI cards above the fold:
   - Account Health
   - Spend At Risk
   - Potential Lift
   - Confidence
-- [ ] Add a compact scope and confidence bar below the verdict.
-- [ ] Include in the scope bar:
+- [x] Add a compact scope and confidence bar below the verdict.
+- [x] Include in the scope bar:
   - date range
   - campaigns / ad sets / ads analyzed
   - spend analyzed
@@ -36,17 +36,17 @@ Turn the audit report page into a clear executive-grade Meta Ads audit experienc
 
 ## 2. Biggest Leak And Decision Layer
 
-- [ ] Add or refine a dedicated “Biggest Leak” card.
-- [ ] Show in that card:
+- [x] Add or refine a dedicated “Biggest Leak” card.
+- [x] Show in that card:
   - finding title
   - affected entity
   - actual vs threshold
   - plain-language why-it-matters text
   - estimated waste if available
-- [ ] Add a “Top 3 Actions” section directly under the KPI row.
-- [ ] Rank each action explicitly as 1, 2, 3.
-- [ ] Add a “Why this matters” line under each action.
-- [ ] Ensure each action ties to a specific finding, not generic severity guidance.
+- [x] Add a “Top 3 Actions” section directly under the KPI row.
+- [x] Rank each action explicitly as 1, 2, 3.
+- [x] Add a “Why this matters” line under each action.
+- [x] Ensure each action ties to a specific finding, not generic severity guidance.
 
 ## 3. Findings And Recommendations
 
@@ -66,31 +66,31 @@ Turn the audit report page into a clear executive-grade Meta Ads audit experienc
 
 ## 4. Information Architecture
 
-- [ ] Keep the report in three layers:
+- [x] Keep the report in three layers:
   - Layer 1: verdict and money impact
   - Layer 2: top actions and biggest leak
   - Layer 3: evidence, grouped findings, charts, and history
-- [ ] Keep detailed evidence below the fold.
-- [ ] Group findings by tab:
+- [x] Keep detailed evidence below the fold.
+- [x] Group findings by tab:
   - Overview
   - Campaigns
   - Structure
   - Tracking
   - Trend
   - History
-- [ ] Hide non-decision-critical detail by default.
-- [ ] Keep the history sparkline only as supporting context, not the main focus.
+- [x] Hide non-decision-critical detail by default.
+- [x] Keep the history sparkline only as supporting context, not the main focus.
 
 ## 5. AI Summary Block
 
-- [ ] Keep AI framed as interpretation, not source of truth.
-- [ ] Structure the block in this order:
+- [x] Keep AI framed as interpretation, not source of truth.
+- [x] Structure the block in this order:
   - Executive verdict
   - Top 3 actions
   - Why performance is slipping
   - What is working well
   - Supporting evidence
-- [ ] Remove all visible internal metadata:
+- [x] Remove all visible internal metadata:
   - provider
   - model
   - status
@@ -100,14 +100,14 @@ Turn the audit report page into a clear executive-grade Meta Ads audit experienc
 
 ## 6. Data Quality And Weak Dataset Handling
 
-- [ ] Show a “Data limitations” card only when needed.
-- [ ] Trigger that card for:
+- [x] Show a “Data limitations” card only when needed.
+- [x] Trigger that card for:
   - aggregate-only exports
   - short analysis windows
   - low spend / sparse data
   - missing conversion detail
-- [ ] Keep zero-dollar findings visible.
-- [ ] When waste and uplift are `$0`, explain qualitative importance instead of implying the account is fine.
+- [x] Keep zero-dollar findings visible.
+- [x] When waste and uplift are `$0`, explain qualitative importance instead of implying the account is fine.
 - [ ] Add stronger wording for:
   - aggregate-only exports
   - low-signal uploads

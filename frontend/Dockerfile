@@ -1,12 +1,30 @@
-FROM node:20-alpine
+# Stage 1: install dependencies and build
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY . .
+RUN npm run build
+
+# Stage 2: production runtime (standalone output only)
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 nextjs
+
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+USER nextjs
 
 EXPOSE 3000
 
-CMD ["sh", "-lc", "npm run build && mkdir -p .next/standalone/.next/static && cp -R .next/static/. .next/standalone/.next/static && if [ -d public ]; then mkdir -p .next/standalone/public && cp -R public/. .next/standalone/public; fi && node .next/standalone/server.js"]
+CMD ["node", "server.js"]

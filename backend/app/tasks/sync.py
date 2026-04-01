@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -19,8 +19,8 @@ def _start_job(db, job: SyncJob, task_id: str, step: str) -> None:
     job.status = "running"
     job.progress = 1
     job.current_step = step
-    job.started_at = datetime.utcnow()
-    job.updated_at = datetime.utcnow()
+    job.started_at = datetime.now(timezone.utc)
+    job.updated_at = datetime.now(timezone.utc)
     db.commit()
 
 
@@ -62,8 +62,8 @@ def _run_job(task, sync_job_id: str, sync_type: str) -> None:
 
         MetaSyncOrchestrator.run(db, job, mock_payload=mock_payload)
         job.status = "completed"
-        job.completed_at = datetime.utcnow()
-        job.updated_at = datetime.utcnow()
+        job.completed_at = datetime.now(timezone.utc)
+        job.updated_at = datetime.now(timezone.utc)
         db.commit()
         logger.info(
             "sync.completed",
@@ -78,7 +78,7 @@ def _run_job(task, sync_job_id: str, sync_type: str) -> None:
         if job is not None:
             job.error_message = str(exc)[:2000]
             job.current_step = "Sync failed"
-            job.updated_at = datetime.utcnow()
+            job.updated_at = datetime.now(timezone.utc)
             if _is_retryable_error(exc) and task.request.retries < task.max_retries:
                 job.status = "retrying"
                 db.commit()
@@ -89,7 +89,7 @@ def _run_job(task, sync_job_id: str, sync_type: str) -> None:
                 )
                 raise task.retry(exc=exc, countdown=min(30 * (task.request.retries + 1), 120))
             job.status = "failed"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(timezone.utc)
             db.commit()
             MetaSyncOrchestrator.log(db, job, job.error_message or "Sync failed", level="error")
         raise

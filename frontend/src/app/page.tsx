@@ -55,13 +55,13 @@ export default function LandingPage() {
       <section id="trust" className="mx-auto max-w-6xl px-6 py-12">
         <div className="mb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Trust</p>
-          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Built for a credible local MVP workflow</h2>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Built for a credible audit workflow</h2>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
           {[
-            "Uploaded reports stay inside this local project environment.",
-            "You can remove imported data and delete the account from settings.",
-            "The product is positioned as a local MVP demo, not a live billing product.",
+            "Uploaded reports stay inside your project environment and are not shared with third parties.",
+            "You can remove imported data and delete the account at any time from Settings.",
+            "No live billing is required to run a full audit.",
           ].map((item) => (
             <article key={item} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <p className="text-sm leading-6 text-slate-600">{item}</p>

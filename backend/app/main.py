@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.logging_config import configure_logging, get_logger
 from app.observability import init_sentry
 from app.routes import audit, auth, billing, debug, health, meta, sync
+from app.services.rate_limit import enforce_rate_limit
 
 settings = get_settings()
 configure_logging("INFO")
@@ -23,6 +24,25 @@ app = FastAPI(
     redoc_url="/redoc" if settings.debug else None,
     openapi_url="/openapi.json" if settings.debug else None,
 )
+
+
+@app.middleware("http")
+async def global_rate_limit_middleware(request: Request, call_next):
+    """Global backstop: 300 requests per minute per IP across all endpoints."""
+    _GLOBAL_LIMIT = 300
+    _GLOBAL_WINDOW = 60
+    try:
+        enforce_rate_limit(request, "global", _GLOBAL_LIMIT, _GLOBAL_WINDOW)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "detail": "Too many requests. Please slow down.",
+                "code": "RATE_LIMITED",
+                "request_id": getattr(request.state, "request_id", None),
+            },
+        )
+    return await call_next(request)
 
 
 @app.middleware("http")

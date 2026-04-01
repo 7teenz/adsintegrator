@@ -1,5 +1,5 @@
 from app.engine.rules.base import AuditRule, register_rule
-from app.engine.types import AccountAuditSnapshot, Category, Severity
+from app.engine.types import AccountAuditSnapshot, Category, Finding, Severity
 
 
 @register_rule
@@ -135,5 +135,167 @@ class ObjectiveMismatchRule(AuditRule):
                     estimated_uplift=campaign.total_spend * 0.09,
                     recommendation_key=self.rule_id,
                     score_impact=5,
+                ))
+        return findings
+
+
+@register_rule
+class WeakCVRRule(AuditRule):
+    """Flags campaigns with meaningful click volume but a poor click-to-conversion rate.
+
+    Thresholds:
+    - CRITICAL: CVR < 0.5% (fewer than 5 conversions per 1,000 clicks)
+    - WARNING:  CVR < 1.5%
+
+    Minimum guards: at least 200 clicks so we have a reliable signal.
+    """
+
+    rule_id = "weak_cvr"
+    category = Category.PERFORMANCE
+    severity = Severity.HIGH
+
+    # CVR thresholds in % (conversions / clicks * 100)
+    CVR_CRITICAL_THRESHOLD = 0.5
+    CVR_WARNING_THRESHOLD = 1.5
+
+    def evaluate(self, snapshot: AccountAuditSnapshot):
+        findings = []
+        for campaign in snapshot.campaigns:
+            if campaign.status != "ACTIVE":
+                continue
+            if campaign.total_clicks < 200:
+                continue
+
+            cvr = (campaign.total_conversions / campaign.total_clicks) * 100 if campaign.total_clicks else 0.0
+
+            if cvr < self.CVR_CRITICAL_THRESHOLD:
+                waste = campaign.total_spend * 0.35
+                uplift = campaign.total_spend * 0.12
+                findings.append(Finding(
+                    rule_id=self.rule_id,
+                    category=self.category,
+                    severity=Severity.CRITICAL,
+                    title=f"Critically low conversion rate: {cvr:.2f}%",
+                    description=(
+                        f"Campaign '{campaign.campaign_name}' is driving {campaign.total_clicks:,} clicks "
+                        f"but converting only {cvr:.2f}% of them. "
+                        f"This indicates a landing-page, offer, or audience-fit problem."
+                    ),
+                    entity_type="campaign",
+                    entity_id=campaign.campaign_id,
+                    entity_name=campaign.campaign_name,
+                    metric_value=round(cvr, 3),
+                    threshold_value=self.CVR_CRITICAL_THRESHOLD,
+                    estimated_waste=waste,
+                    estimated_uplift=uplift,
+                    recommendation_key=self.rule_id,
+                    score_impact=8,
+                ))
+            elif cvr < self.CVR_WARNING_THRESHOLD:
+                waste = campaign.total_spend * 0.15
+                uplift = campaign.total_spend * 0.06
+                findings.append(Finding(
+                    rule_id=self.rule_id,
+                    category=self.category,
+                    severity=Severity.MEDIUM,
+                    title=f"Below-average conversion rate: {cvr:.2f}%",
+                    description=(
+                        f"Campaign '{campaign.campaign_name}' has a CVR of {cvr:.2f}%, "
+                        f"below the {self.CVR_WARNING_THRESHOLD}% benchmark. "
+                        f"Review landing-page relevance and audience alignment."
+                    ),
+                    entity_type="campaign",
+                    entity_id=campaign.campaign_id,
+                    entity_name=campaign.campaign_name,
+                    metric_value=round(cvr, 3),
+                    threshold_value=self.CVR_WARNING_THRESHOLD,
+                    estimated_waste=waste,
+                    estimated_uplift=uplift,
+                    recommendation_key=self.rule_id,
+                    score_impact=4,
+                ))
+        return findings
+
+
+@register_rule
+class UnevenDailySpendRule(AuditRule):
+    """Detects erratic daily spend pacing — a signal of budget-control or bid-strategy issues.
+
+    The rule computes the coefficient of variation (CV = std / mean) of daily spend.
+    A CV above the threshold on a campaign with meaningful spend suggests the
+    algorithm is struggling to distribute budget evenly, which can cause
+    performance inconsistency and wasted impressions on peak days.
+
+    Requires at least 14 daily data points.
+    Threshold: CV > 0.6 (60% relative standard deviation) → WARNING,
+               CV > 1.0 (100%)                            → HIGH.
+    """
+
+    rule_id = "uneven_daily_spend"
+    category = Category.BUDGET
+    severity = Severity.MEDIUM
+
+    CV_WARNING_THRESHOLD = 0.6
+    CV_HIGH_THRESHOLD = 1.0
+
+    def evaluate(self, snapshot: AccountAuditSnapshot):
+        findings = []
+        for campaign in snapshot.campaigns:
+            if campaign.status != "ACTIVE":
+                continue
+            if len(campaign.daily_points) < 14:
+                continue
+            if campaign.total_spend < 200:
+                continue
+
+            daily_spends = [p.spend for p in campaign.daily_points]
+            mean_spend = sum(daily_spends) / len(daily_spends)
+            if mean_spend == 0:
+                continue
+
+            variance = sum((s - mean_spend) ** 2 for s in daily_spends) / len(daily_spends)
+            std_dev = variance ** 0.5
+            cv = std_dev / mean_spend
+
+            if cv >= self.CV_HIGH_THRESHOLD:
+                findings.append(Finding(
+                    rule_id=self.rule_id,
+                    category=self.category,
+                    severity=Severity.HIGH,
+                    title=f"Highly erratic daily spend pacing (CV {cv:.2f})",
+                    description=(
+                        f"Campaign '{campaign.campaign_name}' has a spend coefficient of variation "
+                        f"of {cv:.2f}, meaning daily spend swings wildly around the average. "
+                        f"This can cause unpredictable delivery and audience saturation on high-spend days."
+                    ),
+                    entity_type="campaign",
+                    entity_id=campaign.campaign_id,
+                    entity_name=campaign.campaign_name,
+                    metric_value=round(cv, 3),
+                    threshold_value=self.CV_HIGH_THRESHOLD,
+                    estimated_waste=campaign.total_spend * 0.10,
+                    estimated_uplift=campaign.total_spend * 0.05,
+                    recommendation_key=self.rule_id,
+                    score_impact=5,
+                ))
+            elif cv >= self.CV_WARNING_THRESHOLD:
+                findings.append(Finding(
+                    rule_id=self.rule_id,
+                    category=self.category,
+                    severity=Severity.MEDIUM,
+                    title=f"Uneven daily spend pacing (CV {cv:.2f})",
+                    description=(
+                        f"Campaign '{campaign.campaign_name}' shows uneven spend distribution across days "
+                        f"(CV {cv:.2f}). Consider switching to daily budget or reviewing bid strategy."
+                    ),
+                    entity_type="campaign",
+                    entity_id=campaign.campaign_id,
+                    entity_name=campaign.campaign_name,
+                    metric_value=round(cv, 3),
+                    threshold_value=self.CV_WARNING_THRESHOLD,
+                    estimated_waste=campaign.total_spend * 0.05,
+                    estimated_uplift=campaign.total_spend * 0.03,
+                    recommendation_key=self.rule_id,
+                    score_impact=3,
                 ))
         return findings

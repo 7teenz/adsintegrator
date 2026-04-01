@@ -67,6 +67,18 @@ export default function AuditsPage() {
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ReportTab>("overview");
+  const [copyDone, setCopyDone] = useState(false);
+
+  function handlePrint() {
+    window.print();
+  }
+
+  function handleCopyLink() {
+    void navigator.clipboard.writeText(window.location.href).then(() => {
+      setCopyDone(true);
+      setTimeout(() => setCopyDone(false), 2000);
+    });
+  }
 
   const loadData = useCallback(async () => {
     try {
@@ -197,14 +209,30 @@ export default function AuditsPage() {
               ) : null}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={runAudit}
-            disabled={running}
-            className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {running ? "Analyzing..." : "Run Audit"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {copyDone ? "Copied!" : "Copy link"}
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 print:hidden"
+            >
+              Export PDF
+            </button>
+            <button
+              type="button"
+              onClick={runAudit}
+              disabled={running}
+              className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {running ? "Analyzing..." : "Run Audit"}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -221,7 +249,7 @@ export default function AuditsPage() {
 
       {running ? (
         <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-700">
-          Analyzing your account now. This usually takes under 30 seconds in the local MVP.
+          Analyzing your account now. This usually takes under 30 seconds.
         </div>
       ) : null}
 

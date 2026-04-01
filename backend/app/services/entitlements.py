@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -33,7 +33,7 @@ class EntitlementService:
     def get_reports_used_last_30_days(db: Session, user_id: str) -> int:
         from app.models.audit import AuditRun
 
-        since = datetime.utcnow() - timedelta(days=30)
+        since = datetime.now(timezone.utc) - timedelta(days=30)
         return (
             db.query(AuditRun)
             .filter(AuditRun.user_id == user_id, AuditRun.created_at >= since)

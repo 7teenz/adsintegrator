@@ -17,26 +17,11 @@ from app.services.meta_ads import MetaAdsService
 from app.services.meta_auth import MetaAuthService
 from app.services.rate_limit import enforce_rate_limit
 from app.tasks.sync import run_incremental_sync_job, run_initial_sync_job
+from app.routes.helpers import get_selected_account as _get_selected_account
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 settings = get_settings()
 logger = get_logger(__name__)
-
-
-def _get_selected_account(db: Session, user_id: str):
-    connection = MetaAuthService.get_connection(db, user_id)
-    if not connection:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"detail": "No Meta connection", "code": "META_NOT_CONNECTED"},
-        )
-    account = MetaAdsService.get_selected_account(db, connection.id)
-    if not account:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"detail": "No ad account selected", "code": "META_ACCOUNT_NOT_SELECTED"},
-        )
-    return account
 
 
 def _serialize_job(job: SyncJob | None) -> SyncJobResponse | None:
@@ -206,34 +191,3 @@ async def import_report_history(
     return _serialize_import_result(result, replace_existing)
 
 
-@router.post("/import-csv", response_model=ReportImportResponse)
-async def import_csv_history(
-    request: Request,
-    file: UploadFile = File(...),
-    replace_existing: bool = Form(False),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    enforce_rate_limit(
-        request,
-        "sync:import_csv",
-        settings.rate_limit_upload_requests,
-        settings.rate_limit_upload_window_seconds,
-        user_id=current_user.id,
-    )
-    content = await file.read()
-    try:
-        result = CsvImportService.import_report(
-            db=db,
-            user=current_user,
-            filename=file.filename or "upload.csv",
-            content_bytes=content,
-            replace_existing=replace_existing,
-        )
-    except Exception:
-        logger.exception(
-            "sync.import_failed",
-            extra={"request_id": getattr(request.state, "request_id", None), "user_id": current_user.id, "code": "SYNC_IMPORT_FAILED"},
-        )
-        raise
-    return _serialize_import_result(result, replace_existing)

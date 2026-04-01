@@ -39,16 +39,19 @@ Tie statements only to values in INPUT.
 """.strip()
 
 ACTION_TEMPLATE = """
-Write a prioritized action plan with 3-6 actions.
-Each action should include:
-- priority level
-- what to do
-- affected entity
-- actual metric and threshold if provided
-- why it matters in business terms
-- what to inspect next
-Every action must reference the specific finding that triggered it.
-No guaranteed outcomes. No invented numbers.
+Write a prioritized action plan with 3-6 specific actions derived from the findings in INPUT.
+For each action you MUST:
+- State the priority level (Critical / High / Medium)
+- Name the exact entity (campaign name, ad set name, or "account level") from the finding
+- Quote the actual metric value and threshold value if provided in the finding
+- Explain in one sentence why this issue is costing money or reducing efficiency
+- Give one concrete next step the ad manager should take (e.g. "Pause this campaign and reallocate budget to X", "Refresh ad creatives for this ad set", "Switch bid strategy to cost cap")
+- End with: "Next step: [specific action]"
+Rules:
+- Use only values that appear in INPUT — never invent numbers
+- Never use vague phrases like "address findings" or "review performance"
+- No guaranteed outcomes
+- Order actions by estimated_waste descending
 """.strip()
 
 
@@ -58,6 +61,12 @@ class AISummaryService:
         "prioritize opportunities with the largest estimated uplift",
         "re-run sync and audit",
         "address high-severity findings first",
+        "review your campaigns",
+        "optimize your ads",
+        "improve performance",
+        "monitor closely",
+        "consider reviewing",
+        "take immediate action",
     )
 
     @staticmethod
@@ -209,9 +218,55 @@ class AISummaryService:
             return "Priority"
         return value.capitalize()
 
+    # Category → specific next-step guidance
+    _CATEGORY_NEXT_STEPS: dict[str, str] = {
+        "ctr": "Refresh ad creatives, test new hooks or headlines, and narrow the target audience to improve click relevance.",
+        "cpa": "Review bid strategy (switch to cost cap or target CPA), tighten the audience, and pause the highest-CPA ad sets.",
+        "budget": "Reallocate daily budget from underperforming campaigns toward the highest-ROAS campaigns in the account.",
+        "spend": "Review lifetime vs. daily budget settings and check whether pacing is set to standard or accelerated delivery.",
+        "frequency": "Expand the audience, rotate creatives, or reduce the campaign's daily budget to lower impression frequency.",
+        "trend": "Pull the last 14 days of daily data and compare CTR, CPA, and ROAS week-over-week to confirm the direction.",
+        "performance": "Audit the landing page experience and funnel tracking: confirm the pixel fires, check page load speed, and review the post-click flow.",
+        "structure": "Review campaign objectives and ensure each campaign has a clear, single purpose aligned to its optimization goal.",
+        "opportunity": "Compare ad set performance within this campaign and shift budget toward the highest-converting ad sets.",
+        "placement": "Break out automatic placements into manual placement ad sets and pause high-CPM, low-CTR placements.",
+        "account": "Run an account-level audit on CTR and conversion rate across all active campaigns to confirm whether this is isolated or systemic.",
+        "conversion": "Verify the Meta pixel is firing correctly on all conversion events, and check for funnel drop-off in Ads Manager attribution.",
+        "weak_cvr": "Test the landing page with heatmap tools, confirm the offer is visible above the fold, and check the form or checkout flow for friction.",
+        "uneven_daily_spend": "Switch to a daily budget and set bid cap to reduce delivery spikes, or review pacing settings in campaign budget optimization.",
+    }
+
+    @classmethod
+    def _next_step_for_finding(cls, item: dict[str, Any]) -> str:
+        """Return a specific next-step string based on category and recommendation body."""
+        category = (item.get("category") or "").lower()
+        rule_id = (item.get("rule_id") or "").lower()
+        recommendation_body = (item.get("linked_recommendation_body") or "").lower()
+
+        # Rule-ID-specific overrides first
+        if "weak_cvr" in rule_id:
+            return cls._CATEGORY_NEXT_STEPS["weak_cvr"]
+        if "uneven_daily_spend" in rule_id:
+            return cls._CATEGORY_NEXT_STEPS["uneven_daily_spend"]
+
+        # Recommendation-body keyword overrides
+        if "landing" in recommendation_body:
+            return "Inspect the landing page experience, offer alignment, and tracking path — confirm the pixel fires on the conversion event."
+        if "creative" in recommendation_body:
+            return "Refresh creatives: test a new hook, headline, and visual for this campaign and pause the lowest-CTR ad variants."
+        if "reallocat" in recommendation_body or "budget" in recommendation_body:
+            return "Reallocate budget from this campaign toward the highest-ROAS campaign in the account."
+
+        # Category fallback
+        for key, guidance in cls._CATEGORY_NEXT_STEPS.items():
+            if key in category or key in rule_id:
+                return guidance
+
+        return "Open Ads Manager, filter by this campaign, and review delivery, CTR, and conversion rate over the last 14 days."
+
     @classmethod
     def _fallback_action_plan(cls, payload: dict[str, Any]) -> str:
-        findings = payload.get("findings", [])[:3]
+        findings = payload.get("findings", [])[:5]
         if not findings:
             return (
                 "1. Confirm the imported report covers at least 30 days with daily rows.\n"
@@ -219,36 +274,38 @@ class AISummaryService:
                 "3. Re-run the audit after the next data refresh to compare the account health score."
             )
 
+        # Sort by estimated waste descending for maximum impact ordering
+        findings = sorted(findings, key=lambda f: f.get("estimated_waste", 0), reverse=True)[:3]
+
         actions: list[str] = []
         for index, item in enumerate(findings, start=1):
             severity = cls._title_case_severity(item.get("severity"))
             entity_name = item.get("entity_name") or "the affected entity"
             actual = cls._format_metric_for_summary(item.get("metric_value"), item.get("category", ""))
             threshold = cls._format_metric_for_summary(item.get("threshold_value"), item.get("category", ""))
+            waste = item.get("estimated_waste", 0)
+
             metric_text = ""
             if actual and threshold:
                 metric_text = f"Actual is {actual} versus the threshold of {threshold}."
             elif actual:
-                metric_text = f"Actual is {actual}."
+                metric_text = f"Actual value is {actual}."
 
-            inspect_next = "Inspect the relevant campaign setup, creative, landing page, and tracking path next."
-            recommendation_body = item.get("linked_recommendation_body") or ""
-            if "landing" in recommendation_body.lower():
-                inspect_next = "Inspect the landing page, offer alignment, and tracking path next."
-            elif "creative" in recommendation_body.lower():
-                inspect_next = "Inspect creative fatigue, hooks, and audience-message fit next."
-            elif "budget" in recommendation_body.lower() or "reallocate" in recommendation_body.lower():
-                inspect_next = "Inspect budget allocation across sibling campaigns and ad sets next."
+            waste_text = f" Estimated waste: ${waste:.0f}." if waste > 0 else ""
 
             recommendation_title = item.get("linked_recommendation_title") or item.get("title") or "Review this issue"
             why_it_matters = cls._clean_sentence(
                 item.get("description"),
                 "This issue is directly reducing account efficiency.",
             )
-            action_intro = f"{index}. {severity}: {recommendation_title} on {entity_name}."
+            next_step = cls._next_step_for_finding(item)
+
+            action_intro = f"{index}. {severity}: {recommendation_title} — {entity_name}."
             metric_clause = f" {metric_text}" if metric_text else ""
             actions.append(
-                f"{action_intro}{metric_clause} Why it matters: {why_it_matters} Next step: {inspect_next}"
+                f"{action_intro}{metric_clause}{waste_text} "
+                f"Why it matters: {why_it_matters} "
+                f"Next step: {next_step}"
             )
         return "\n".join(actions)
 

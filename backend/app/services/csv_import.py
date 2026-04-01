@@ -6,11 +6,10 @@ import io
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
-import magic
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 from sqlalchemy.orm import Session
@@ -94,7 +93,7 @@ class CsvImportService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"detail": "Report file is too large (max 10MB)", "code": "REPORT_FILE_TOO_LARGE"},
             )
-        detected_mime = magic.from_buffer(content_bytes[:2048], mime=True)
+        detected_mime = cls._detect_mime_from_bytes(content_bytes)
         if detected_mime not in cls.ALLOWED_MIME_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -501,6 +500,21 @@ class CsvImportService:
         return "period_aggregate" if has_period_bounds and not explicit_date_rows else "daily_breakdown"
 
     @staticmethod
+    def _detect_mime_from_bytes(content_bytes: bytes) -> str:
+        """Detect MIME type from magic bytes — no native library required."""
+        if content_bytes[:4] == b"PK\x03\x04":
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        try:
+            content_bytes[:2048].decode("utf-8")
+            return "text/plain"
+        except UnicodeDecodeError:
+            try:
+                content_bytes[:2048].decode("latin-1")
+                return "text/plain"
+            except UnicodeDecodeError:
+                return "application/octet-stream"
+
+    @staticmethod
     def _detect_extension(filename: str) -> str:
         lower = (filename or "").lower()
         if "." not in lower:
@@ -541,7 +555,7 @@ class CsvImportService:
                 campaign.name = row["campaign_name"] or campaign.name
                 campaign.status = row["status"] or campaign.status
                 campaign.objective = row["objective"] or campaign.objective
-            campaign.synced_at = datetime.utcnow()
+            campaign.synced_at = datetime.now(timezone.utc)
             result[row["campaign_id"]] = campaign
         db.flush()
         return result
@@ -575,7 +589,7 @@ class CsvImportService:
                 ad_set.name = row["adset_name"] or ad_set.name
                 ad_set.status = row["status"] or ad_set.status
                 ad_set.optimization_goal = row["objective"] or ad_set.optimization_goal
-            ad_set.synced_at = datetime.utcnow()
+            ad_set.synced_at = datetime.now(timezone.utc)
             result[row["adset_id"]] = ad_set
         db.flush()
         return result
@@ -605,7 +619,7 @@ class CsvImportService:
                 ad.ad_set_id = ad_set.id
                 ad.meta_adset_id = ad_set.meta_adset_id
                 ad.name = row["ad_name"] or ad.name
-            ad.synced_at = datetime.utcnow()
+            ad.synced_at = datetime.now(timezone.utc)
         db.flush()
 
     @staticmethod
@@ -745,4 +759,4 @@ def _fill_insight_row(row: Any, metrics: dict[str, Any]) -> None:
     row.conversions = metrics["conversions"]
     row.conversion_value = metrics["conversion_value"]
     row.roas = metrics["roas"]
-    row.synced_at = datetime.utcnow()
+    row.synced_at = datetime.now(timezone.utc)

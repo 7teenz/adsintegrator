@@ -21,6 +21,9 @@ class AuditFindingResponse(BaseModel):
     estimated_uplift: float
     recommendation_key: str | None
     score_impact: float
+    confidence_label: str
+    confidence_reason: str
+    inspection_target: str
 
 
 class RecommendationResponse(BaseModel):
@@ -43,6 +46,7 @@ class AuditScoreResponse(BaseModel):
     description: str
     details: str
     findings_count: int = 0
+    strongest_issue: str | None = None
 
 
 class TrendPointResponse(BaseModel):
