@@ -96,3 +96,59 @@ class FrequencySpikeRule(AuditRule):
                     threshold_value=avg_prev,
                 ))
         return findings
+
+
+@register_rule
+class HighFrequencyAdSetRule(AuditRule):
+    rule_id = "freq_high_adset"
+    category = Category.FREQUENCY
+    description = "Flags individual ad sets with high frequency indicating audience saturation"
+
+    def evaluate(self, snapshot: AccountSnapshot) -> list[Finding]:
+        findings: list[Finding] = []
+        for ad_set in snapshot.ad_sets:
+            if ad_set.status != "ACTIVE" or ad_set.total_impressions < 500:
+                continue
+            if ad_set.total_spend < 10:
+                continue
+
+            freq = ad_set.frequency
+
+            if freq >= FREQUENCY_CRITICAL:
+                waste = ad_set.total_spend * 0.3
+                findings.append(Finding(
+                    rule_id=self.rule_id,
+                    severity=Severity.CRITICAL,
+                    category=Category.FREQUENCY,
+                    title=f"Ad set audience saturated: frequency {freq:.1f}",
+                    description=(
+                        f"Ad set '{ad_set.ad_set_name}' has a frequency of {freq:.1f} — "
+                        f"users in this audience have seen these ads ~{freq:.0f} times. "
+                        f"Expand the audience or pause and refresh creatives to recover performance."
+                    ),
+                    entity_type="ad_set",
+                    entity_id=ad_set.ad_set_id,
+                    entity_name=ad_set.ad_set_name,
+                    metric_value=freq,
+                    threshold_value=FREQUENCY_CRITICAL,
+                    estimated_waste=waste,
+                ))
+            elif freq >= FREQUENCY_WARNING:
+                waste = ad_set.total_spend * 0.15
+                findings.append(Finding(
+                    rule_id=self.rule_id,
+                    severity=Severity.WARNING,
+                    category=Category.FREQUENCY,
+                    title=f"Ad set frequency rising: {freq:.1f}",
+                    description=(
+                        f"Ad set '{ad_set.ad_set_name}' frequency is {freq:.1f}. "
+                        f"Monitor for declining CTR — consider rotating creatives soon."
+                    ),
+                    entity_type="ad_set",
+                    entity_id=ad_set.ad_set_id,
+                    entity_name=ad_set.ad_set_name,
+                    metric_value=freq,
+                    threshold_value=FREQUENCY_WARNING,
+                    estimated_waste=waste,
+                ))
+        return findings

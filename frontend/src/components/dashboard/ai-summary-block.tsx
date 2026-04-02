@@ -1,6 +1,6 @@
 "use client";
 
-import { AuditAISummary, AuditReport, cleanAiSummaryText, deriveTopActions } from "@/lib/audit";
+import { AuditAISummary, AuditReport, cleanAiSummaryText, deriveDeterministicActionPlan, deriveTopActions } from "@/lib/audit";
 
 interface Props {
   summary: AuditAISummary;
@@ -19,7 +19,8 @@ function splitParagraphs(text: string | null | undefined): string[] {
 export function AISummaryBlock({ summary, report, onRegenerate, regenerating }: Props) {
   const executiveVerdict = cleanAiSummaryText(summary.short_executive_summary) || "The audit found clear account-level actions worth prioritizing now.";
   const whyPerformanceIsSlipping = splitParagraphs(summary.detailed_audit_explanation);
-  const supportingEvidence = splitParagraphs(summary.prioritized_action_plan);
+  const aiActionPlan = splitParagraphs(summary.prioritized_action_plan);
+  const supportingEvidence = aiActionPlan.length > 0 ? aiActionPlan : deriveDeterministicActionPlan(report);
   const topActions = deriveTopActions(report);
   const wins = report.health_score >= 75
     ? ["The account still shows a healthy baseline despite the issues surfaced in this run."]
@@ -74,9 +75,7 @@ export function AISummaryBlock({ summary, report, onRegenerate, regenerating }: 
           <article className="rounded-xl border border-slate-100 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Detected from data</p>
             <div className="mt-2 space-y-2 text-sm text-slate-700">
-              {supportingEvidence.length > 0 ? supportingEvidence.slice(0, 3).map((item) => <p key={item}>{item}</p>) : (
-                <p>The rule engine detected the strongest issues and ranked the most meaningful actions for this run.</p>
-              )}
+              {supportingEvidence.slice(0, 3).map((item) => <p key={item}>{item}</p>)}
             </div>
           </article>
 

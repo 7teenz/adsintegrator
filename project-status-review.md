@@ -1,258 +1,244 @@
 # Project Status Review
 
-**Generated:** 2026-04-01
-**Auditor:** Automated technical audit (scheduled task)
-**Commit history:** 4 commits on `main` (Initial commit → migration fixes → Gemini API → AI summary change)
+> **Generated:** 2026-04-02
+> **Reviewer:** Automated technical audit (scheduled task)
+> **Commit history inspected:** 6 commits on `main` (Initial commit → migration fixes → Gemini API → AI summary change → dashboard+rules fix → add .env to gitignore)
 
 ---
 
 ## 1. Executive Summary
 
-**Current project stage:** Late MVP / pre-production. Core features are code-complete. The application runs end-to-end locally via Docker Compose. No production deployment has occurred.
+### Current Project Stage
+Late-MVP / Pre-launch. The core product loop is code-complete: register → connect / import → sync → audit → report → AI summary. The backend is structured for production, Docker and CI pipelines are wired, and the frontend builds cleanly. The project is runnable but has several open blockers before it should handle real user traffic.
 
-**Overall maturity level:** 85–90% feature-complete for an MVP launch. All primary user flows (register → verify email → upload CSV/XLSX → run audit → view executive report with AI interpretation) are implemented and wired together. The deterministic audit engine has 31 registered rules across 12 rule files with 169 passing unit tests. The frontend is a comprehensive Next.js dashboard with auth, data import, audit report, and settings pages.
+### Overall Maturity Level
+**6 / 10** — The deterministic audit engine, async pipeline, auth hardening, and frontend cleanup phases have all been worked through systematically per the implementation plan. What remains is largely: (a) secret rotation that was documented but not yet executed, (b) real-world engine validation and rule depth, and (c) the entire presentation-layer improvement backlog documented in `improvement-plan.md` and `Audit_Report_Page_Optimization_Checklist.md`.
 
-**Main risks:**
+### Main Risks
+1. **Real secrets committed to the repo.** `backend/.env` contains live credentials — a real Gemini AI API key, a real Sentry DSN, and what appear to be real `SECRET_KEY` and `ENCRYPTION_KEY` values. This is explicitly flagged as an unresolved Phase 1 blocker in `Meta_Ads_Audit_Implementation_Plan.md`.
+2. **12 integration tests are in a last-failed state.** The `.pytest_cache/v/cache/lastfailed` file lists all major integration test suites as failing. These tests require a live database and Redis; they may be environment failures rather than logic bugs, but this cannot be confirmed without a CI run.
+3. **No fixture dataset folder exists.** `Deterministic_Engine_Rule_Depth_Checklist.md` plans a comprehensive fixture/scenario validation suite; none of the fixture CSV/XLSX sample files described there have been created.
+4. **Global rate limiting documentation is stale.** The implementation plan notes "global middleware not yet added" but `backend/app/main.py` actually contains a fully-implemented global rate limit middleware. The doc note is outdated.
+5. **`ENVIRONMENT=production` in the committed `.env`.** The env file sets `ENVIRONMENT=production` and `DEBUG=false`. This is the right production posture, but combined with real secrets in the same file it creates a hard-to-audit security boundary.
 
-1. **Secrets in `.env` files.** `backend/.env` contains real-looking `SECRET_KEY` and `ENCRYPTION_KEY` values. While `.env` files are in `.gitignore` and were never committed to git history, the keys have not been rotated and no key management strategy exists for production.
-2. **No frontend tests.** Zero test files, no test runner (Jest/Vitest/Playwright/Cypress), and no test scripts in `package.json`. The CI pipeline only runs `npm run lint` and `npm run build`.
-3. **Backend integration tests fail in sandbox.** 12 integration test errors due to SQLite disk I/O issues in the test fixture path (`tests/test_phase8.sqlite3`). The 169 engine unit tests pass cleanly. CI uses PostgreSQL so this may only affect local/sandbox runs.
-4. **CI missing Redis service.** GitHub Actions backend job does not provision Redis, but tests and app code reference `REDIS_URL`. Tests currently default to SQLite and mock most infrastructure.
-5. **No production environment deployed.** Phase 5 items (production env vars, Sentry DSN, SMTP credentials, AI provider keys, domain/CORS config) are documented but unset.
-6. **Stripe/billing is deferred.** The billing route exists but is debug-only. No real payment flow exists.
-7. **Deterministic Engine Rule Depth checklist is entirely unchecked.** All 80+ items in `Deterministic_Engine_Rule_Depth_Checklist.md` remain open despite significant rule implementation already existing in code.
-8. **Stray file.** `backend/test_sentry.pyecho` appears to be a misnamed/empty file.
-
-**Confidence level:** High for backend code assessment (all source files read and cross-referenced). High for frontend code assessment (all source files read). Medium for deployment readiness (no live environment to test against).
+### Confidence Level
+**High** for backend structure and completed items. **Medium** for test pass/fail status (last-failed cache suggests failures, but CI environment dependency is the likely cause). **Low** for rule engine depth and presentation-layer quality — the checklists confirm significant gaps remain.
 
 ---
 
 ## 2. Architecture and Codebase Snapshot
 
-### Main modules / folders
+### Main Modules / Folders
 
-| Path | Purpose |
-|------|---------|
-| `backend/app/` | FastAPI application (routes, services, models, engine, tasks, middleware) |
-| `backend/app/engine/` | Deterministic audit engine (rules, scoring, collector, orchestrator, recommendations) |
-| `backend/app/engine/rules/` | 12 rule files, 31 registered rule classes, ~1184 lines |
-| `backend/alembic/` | 7 database migration files |
-| `backend/tests/` | 169 passing engine tests + 12 erroring integration tests across 12 test files |
-| `frontend/src/app/` | Next.js 14 App Router pages (landing, auth, dashboard, legal) |
-| `frontend/src/components/` | ~25 React components (dashboard widgets, auth, landing, UI) |
-| `frontend/src/lib/` | Shared utilities (api.ts, auth.ts, audit.ts) |
-| `.github/workflows/` | CI pipeline (backend tests + frontend lint/build) |
+| Path | Role |
+|---|---|
+| `backend/app/main.py` | FastAPI entry point; middleware, exception handlers, router registration |
+| `backend/app/engine/` | Deterministic audit engine (orchestrator, collector, scoring, rules, recommendations, types) |
+| `backend/app/routes/` | API route handlers: audit, auth, billing, debug, health, meta, sync |
+| `backend/app/services/` | Business logic: auth, AI summary, email, Meta OAuth, CSV import, rate limit, resilience, etc. |
+| `backend/app/models/` | SQLAlchemy ORM models: user, audit, campaign, insights, meta_connection, subscription, sync_job |
+| `backend/app/schemas/` | Pydantic request/response schemas |
+| `backend/app/tasks/` | Celery async tasks: audit, sync |
+| `backend/alembic/versions/` | 7 migration files covering phases 2–7 |
+| `frontend/src/app/` | Next.js App Router pages: auth, dashboard, landing, legal |
+| `frontend/src/components/dashboard/` | Dashboard UI components (15 components) |
+| `frontend/src/lib/` | Frontend API client (`api.ts`), audit types/helpers (`audit.ts`), auth state (`auth.ts`) |
+| `backend/tests/` | Integration + engine unit tests |
 
-### Core technologies
+### Core Technologies
+- **Backend:** Python 3.12, FastAPI 0.109, SQLAlchemy 2.0, Alembic, Celery 5.3 (Redis broker), pydantic-settings 2.7, python-magic, sentry-sdk, httpx
+- **Frontend:** Next.js (App Router), TypeScript, Tailwind CSS
+- **Infrastructure:** PostgreSQL 16, Redis 7, Docker Compose
+- **AI:** Configurable provider (OpenAI / Anthropic / Gemini / mock); currently live Gemini 2.5-flash configured in `backend/.env`
+- **Observability:** Sentry (backend + frontend), structured JSON logging, request ID propagation
 
-- **Backend:** Python 3.12, FastAPI 0.109.2, SQLAlchemy 2.0, Alembic, Celery 5.3.6, Redis, PostgreSQL 16
-- **Frontend:** Next.js 14.1.0, React 18.2.0, TypeScript 5.3.3, Tailwind CSS 3.4.1
-- **Infrastructure:** Docker Compose (7 services), Mailpit (local email), Adminer (local DB UI)
-- **Observability:** Sentry SDK (backend + frontend), structured logging with request ID propagation
-- **AI:** OpenAI / Anthropic / Gemini support (provider-switchable via config)
-- **Security:** Fernet AES-128 token encryption, pbkdf2_sha256 password hashing, JWT + httpOnly cookie auth, OAuth state validation, per-endpoint rate limiting
+### Entry Points
+- Backend: `uvicorn app.main:app` — `backend/app/main.py`
+- Worker: `celery -A app.celery_app:celery worker` — `backend/app/celery_app.py`
+- Frontend: `npm run dev` / `npm run build` — Next.js standard
 
-### Entry points
+### Important Integrations
+- Meta Ads OAuth (real or `META_APP_ID=mock` for local dev)
+- CSV/XLSX import pipeline (`backend/app/services/csv_import.py`)
+- Celery async audit queue (Redis broker)
+- AI summary generation (Gemini, OpenAI, Anthropic, or mock)
+- SMTP email delivery (Mailpit locally, real SMTP in production)
+- Sentry error tracking (backend + frontend)
 
-- Backend API: `backend/app/main.py` → FastAPI app on port 8000
-- Celery worker: `celery -A app.celery_app:celery worker`
-- Frontend: `frontend/src/app/layout.tsx` → Next.js on port 3000
-- Docker: `docker-compose.yml` (postgres, redis, backend, celery-worker, frontend + optional mailpit, adminer)
-
-### Important integrations
-
-- Meta Graph API (OAuth + data sync) with mock mode (`META_APP_ID=mock`)
-- AI providers (OpenAI, Anthropic, Google Gemini) for audit summary generation
-- SMTP for email verification and password reset
-- Redis for Celery broker, rate limiting, and future caching
-
-### Build / run / test status
-
-- **Docker build:** Functional (multi-stage Dockerfiles for both services)
-- **Backend tests:** 169 pass (engine), 12 error (integration, SQLite path issue)
-- **Frontend build:** Compiles (confirmed by CI `npm run build` step)
-- **Frontend tests:** None exist
-- **CI:** GitHub Actions runs on push/PR to main; backend tests + frontend lint/build
+### Build / Run / Test Status
+- **Docker Compose:** Builds and runs. Frontend and backend have separate Dockerfiles. Frontend is a multi-stage build.
+- **Backend tests:** Last-failed cache shows 12 integration tests as failed — almost certainly environment failures (no DB/Redis during last local run). Engine unit tests in `tests/engine/` have a complete fixture library.
+- **Frontend:** `.next/` build artifacts present; the frontend has been successfully built in production mode.
+- **CI:** `.github/workflows/ci.yml` — runs pytest for backend (with a live Postgres service) and lint + build for frontend on push/PR to `main`.
 
 ---
 
 ## 3. What Appears Completed
 
 | Item | Evidence |
-|------|----------|
-| User registration, login, logout with JWT + httpOnly cookies | `backend/app/routes/auth.py`, `frontend/src/components/auth/auth-card.tsx` |
-| Email verification and password reset flows | `backend/app/routes/auth.py`, `backend/app/services/email.py`, frontend pages for verify/forgot/reset |
-| Meta OAuth connection with mock mode | `backend/app/routes/meta.py`, `backend/app/services/meta_auth.py`, `backend/app/services/meta_mock.py` |
-| Ad account selection and management | `backend/app/services/meta_ads.py`, `frontend/src/components/dashboard/ad-account-selector.tsx` |
-| CSV/XLSX import with 50+ column aliases (including Russian) | `backend/app/services/csv_import.py`, `backend/tests/test_csv_import_integration.py` |
-| Meta data sync pipeline (campaigns, ad sets, ads, creatives, insights) | `backend/app/services/meta_sync.py`, `backend/app/tasks/sync.py` |
-| Deterministic audit engine with 31 rules across 11 categories | `backend/app/engine/rules/` (12 files, 1184 lines) |
-| 5-pillar scoring system (Acquisition, Conversion, Budget, Trend, Structure) | `backend/app/engine/scoring.py` |
-| Recommendation engine with 15 templates | `backend/app/engine/recommendations.py` |
-| Async audit execution via Celery | `backend/app/tasks/audit.py`, `backend/app/routes/audit.py` |
-| AI summary generation (OpenAI/Anthropic/Gemini) | `backend/app/services/ai_summary.py` |
-| Executive dashboard with health score, spend at risk, top actions, biggest leak | `frontend/src/app/dashboard/page.tsx` |
-| Full audit report page with tabs (Overview, Campaigns, Structure, Tracking, Trend, History) | `frontend/src/app/dashboard/audits/page.tsx` |
-| Data import UI with file preview, checklist, and sync status | `frontend/src/components/dashboard/data-sync.tsx` |
-| Rate limiting on auth, upload, and audit endpoints | `backend/app/services/rate_limit.py`, rate_limit decorators in routes |
-| Sentry integration (backend + frontend, DSN-configurable) | `backend/app/observability.py`, `frontend/src/components/app/sentry-init.tsx` |
-| Structured logging with request ID propagation | `backend/app/logging_config.py` |
-| Docker Compose with health checks, profiles, Redis persistence | `docker-compose.yml` |
-| CI pipeline (GitHub Actions) | `.github/workflows/ci.yml` |
-| Privacy policy and Terms of Service pages | `frontend/src/app/privacy/page.tsx`, `frontend/src/app/terms/page.tsx` |
-| Account deletion and data clearing | `backend/app/services/account_cleanup.py`, `frontend/src/app/dashboard/settings/page.tsx` |
-| Debug routes guarded behind DEBUG flag | `backend/app/routes/debug.py`, `backend/app/main.py` |
-| Production guard: debug forced off when ENVIRONMENT=production | `backend/app/config.py` |
-| FastAPI docs/ReDoc disabled in production | `backend/app/main.py` |
-| Multi-stage Docker builds for frontend | `frontend/Dockerfile` |
-| Alembic migrations run on container startup | `backend/Dockerfile` |
-| Upload MIME/content-type validation | `backend/app/services/csv_import.py` |
-| Entitlements system (free/premium/agency tiers) | `backend/app/services/entitlements.py` |
-| Token re-encryption script | `backend/scripts/reencrypt_tokens.py` |
-| `.gitignore` properly excludes `.env` files | `.gitignore` |
+|---|---|
+| FastAPI app with structured middleware, CORS, error normalization, request ID propagation | `backend/app/main.py` — full implementation |
+| httpOnly cookie auth | `backend/app/routes/auth.py` (`_set_auth_cookie`), `backend/app/middleware/deps.py` (cookie + Bearer fallback) |
+| Email verification, forgot-password, reset-password flows | `backend/app/routes/auth.py` (all endpoints present), `backend/app/services/email.py`, all frontend pages exist |
+| Email verification block on login and API access | `backend/app/middleware/deps.py` lines 47–51 |
+| Production debug guard in config | `backend/app/config.py` — `disable_debug_in_production` validator |
+| Debug routes only in debug mode | `backend/app/main.py` lines 162–163 |
+| FastAPI docs disabled in production | `backend/app/main.py` — `docs_url`, `redoc_url`, `openapi_url` all conditional on `debug` |
+| Global + per-endpoint rate limiting | `backend/app/main.py` global middleware + per-endpoint in auth, sync, audit routes |
+| Severity.WARNING alias and new Category members (CTR, FREQUENCY, CPA) | `backend/app/engine/types.py` lines 11, 25–27 |
+| Scoring pillars including new categories | `backend/app/engine/scoring.py` PILLARS dict |
+| AccountAuditSnapshot import alias in rule files | `backend/app/engine/rules/ctr_rules.py` line 3 |
+| `avg_ctr`, `avg_frequency`, `daily_ctr`, `daily_frequency` convenience properties | `backend/app/engine/types.py` lines 74–97 |
+| `Base.metadata.create_all()` removed from startup | `backend/app/main.py` — absent |
+| Alembic migration at Docker startup | `backend/Dockerfile` |
+| MIME/content-type verification on upload | `backend/app/services/csv_import.py`, `python-magic` in `requirements.txt` |
+| AI fallback generic text removed from summaries | `backend/app/services/ai_summary.py` GENERIC_ACTION_PLAN_PHRASES filter |
+| Async audit pipeline with Celery | `backend/app/tasks/audit.py`, `backend/app/routes/audit.py` (`/audit/run`, `/audit/job/{job_id}`) |
+| Job status fields on AuditRun | Alembic migration `20260320_0007`, `backend/app/models/audit.py` |
+| Frontend polling for audit job completion | `frontend/src/app/dashboard/audits/page.tsx` (imports `AuditJob`, `AuditJobStatus`) |
+| Frontend spinner component | `frontend/src/components/ui/spinner.tsx` |
+| User data deletion endpoint | `backend/app/routes/auth.py` — `DELETE /auth/data` and `DELETE /auth/account` |
+| Privacy and terms pages | `frontend/src/app/privacy/page.tsx`, `frontend/src/app/terms/page.tsx` |
+| Forgot / reset / verify email frontend pages | `frontend/src/app/forgot-password/`, `reset-password/`, `verify-email/` |
+| Sentry backend integration | `backend/app/observability.py`, `sentry-sdk[fastapi]` in requirements |
+| Sentry frontend integration | `frontend/src/components/app/sentry-init.tsx` |
+| Worst-performers query fix (subquery aggregation before join) | `backend/app/routes/audit.py` lines 477–543 |
+| Multi-stage frontend Dockerfile | `frontend/Dockerfile` |
+| Redis append-only persistence + password support | `docker-compose.yml` |
+| Frontend auth moved from localStorage to sessionStorage | `frontend/src/lib/auth.ts` — uses `sessionStorage` |
+| Report tab structure (Overview / Campaigns / Structure / Tracking / Trend / History) | `frontend/src/app/dashboard/audits/page.tsx` lines 29–37 |
+| Confidence label and reason per finding | `backend/app/routes/audit.py` `_derive_finding_confidence`, `_derive_inspection_target` |
+| Biggest leak, top actions, confidence derivation helpers in frontend | `frontend/src/lib/audit.ts` exports `deriveBiggestLeak`, `deriveTopActions`, `deriveConfidence` |
+| Verdict logic per health score | `frontend/src/app/dashboard/audits/page.tsx` `verdictForReport` |
+| Aggregate-only specific rules | `backend/app/engine/rules/aggregate_rules.py` — 3 rules present |
+| Deterministic engine rule test suite with fixture builders | `backend/tests/engine/test_rules.py`, `backend/tests/engine/fixtures.py` |
+| Scoring calibration test | `backend/tests/engine/test_scoring_calibration.py` |
+| Fixture scenario tests | `backend/tests/engine/test_fixture_scenarios.py` |
+| Full Alembic migration chain (7 migrations, phases 2–7) | `backend/alembic/versions/` |
+| Re-encryption script created | `backend/scripts/reencrypt_tokens.py` |
+| Resend-verification endpoint | `backend/app/routes/auth.py` `POST /auth/resend-verification` |
+| `cleanAiSummaryText()` shared helper | `frontend/src/lib/audit.ts` export (confirmed by audits page imports) |
 
 ---
 
 ## 4. What Appears Partially Implemented
 
-### 4.1 Audit Report UX Refinements
-- **What exists:** Full audit report page with executive layer, top 3 actions, biggest leak card, KPI cards, tab navigation, findings list, AI summary block, pillar scores, severity breakdown, history sparkline.
-- **What is missing (per `Audit_Report_Page_Optimization_Checklist.md`):** Dynamic recommendation bodies tied to specific finding metrics (Section 3, 6 unchecked items), business-language wording throughout (Section 7, 5 unchecked items), pre-upload checklist/empty state (Section 8, 6 unchecked items), export/share readiness (Section 9, 5 unchecked items), validation across data shapes (Section 10, 6 unchecked items).
-- **File evidence:** `frontend/src/app/dashboard/audits/page.tsx`, `frontend/src/components/dashboard/findings-list.tsx`, `frontend/src/components/dashboard/ai-summary-block.tsx`
+### 4a. Deterministic Engine Rule Depth
+**What exists:** 12 rule files with ~30+ individual rules covering CTR, CPA, frequency, budget, spend, performance, structure, trend, opportunity, account, and aggregate scenarios. Rule tests exist with fixture builders for 8 scenario types (healthy, low CTR, weak CVR, high CPA, fatigued, budget imbalanced, aggregate-only, uneven spend).
 
-### 4.2 AI Summary Quality
-- **What exists:** AI summary generation with structured prompt, three output sections, generic-phrase detection, error handling, provider fallback.
-- **What is missing:** AI action plan that is specific to the current finding set (not generic bullets). The checklist notes "If AI omits a strong action plan, synthesize one from deterministic findings instead of generic fallback bullets."
-- **File evidence:** `backend/app/services/ai_summary.py`, `Audit_Report_Page_Optimization_Checklist.md` (Section 5 items 97–99)
+**What is missing:** Per `Deterministic_Engine_Rule_Depth_Checklist.md`, none of the following are started:
+- Dedicated fixture CSV/XLSX sample files in a named directory
+- Expected-outcome specs (scenario → expected findings, severities, score ranges)
+- Tests verifying irrelevant rules do NOT fire (only positive-case tests exist)
+- CVR / conversion leakage rule expansion beyond the existing `WeakCVRRule`
+- Rule coverage matrix
+- Score calibration validated against named scenario bands
 
-### 4.3 Backend Integration Tests
-- **What exists:** 12 integration test functions covering auth, CSV import, entitlements, scoring, sync job flow, and audit+entitlements.
-- **What is missing:** All 12 error with SQLite disk I/O issues (`test_phase8.sqlite3`). Tests need a writable path or in-memory database.
-- **File evidence:** `backend/tests/conftest.py` (line 13: `TEST_DB_PATH = Path(__file__).resolve().parent / "test_phase8.sqlite3"`)
+**File evidence:** `Deterministic_Engine_Rule_Depth_Checklist.md` — every item in sections 1–15 is unchecked.
 
-### 4.4 Global Rate Limiting Middleware
-- **What exists:** Per-endpoint rate limiting on auth, sync, and audit routes.
-- **What is missing:** Global rate limiting middleware is documented as needed but not yet wired as a FastAPI middleware. The 300/min global limit is applied per-request in `main.py` but the implementation plan notes "global middleware not yet added."
-- **File evidence:** `backend/app/main.py`, `Meta_Ads_Audit_Implementation_Plan.md` (line 184)
+### 4b. Audit Report Page — Recommendations Not Connected to Findings
+**What exists:** Recommendations are stored per finding in the DB and returned in API responses. `FindingsList` component and `findings-list.tsx` exist.
 
-### 4.5 Data Confidence and Weak Dataset Messaging
-- **What exists:** Confidence labels (High/Medium/Low) derived from analysis window, spend, and campaign count. Data limitations card in the audit report.
-- **What is missing:** Stronger wording for aggregate-only exports, low-signal uploads, and missing conversion depth. Confidence not visibly lowered when dataset is thin.
-- **File evidence:** `frontend/src/lib/audit.ts` (`deriveConfidence`), `Audit_Report_Page_Optimization_Checklist.md` (Section 6 items 111–115)
+**What is missing:** Per `Audit_Report_Page_Optimization_Checklist.md` sections 3 and 7:
+- Recommendations are not rendered directly under each finding in the UI
+- "Actual vs Threshold" not shown on every finding
+- Category-aware metric formatting (percent for CTR, currency for spend, `x` for frequency) not fully applied
+- Business-language section titles not fully in place
+
+**File evidence:** `Audit_Report_Page_Optimization_Checklist.md` — sections 3, 7, 8, 9 all unchecked or partially checked.
+
+### 4c. AI Summary Block Quality
+**What exists:** AI summary is generated, stored, returned, and displayed. Generic phrase filtering exists in `backend/app/services/ai_summary.py`.
+
+**What is missing:**
+- First visible AI content should be action-led, not a paragraph wall
+- Action plan synthesis from deterministic findings when AI omits a strong plan
+- Action plan tied specifically to current finding set
+
+**File evidence:** `Audit_Report_Page_Optimization_Checklist.md` section 5 — last 3 items marked `[ ]`.
+
+### 4d. Pre-Upload and Empty State UX
+**What exists:** Data sync component exists. Basic empty states exist.
+
+**What is missing:** Pre-upload checklist (30+ days, daily rows, spend, clicks, conversions, campaign and ad set fields), stronger empty state explanation, aggregate-only wording.
+
+**File evidence:** `Audit_Report_Page_Optimization_Checklist.md` section 8 — all items unchecked.
+
+### 4e. Secret Rotation (Critical, partially documented)
+**What exists:** `backend/scripts/reencrypt_tokens.py` created. `.gitignore` updated (commit `69220cc`).
+
+**What is missing:** The actual secret rotation has not happened. `backend/.env` still contains live `SECRET_KEY`, `ENCRYPTION_KEY`, Gemini API key, and Sentry DSN values. The implementation plan explicitly flags this as a manual step.
+
+**File evidence:** `backend/.env` lines 5, 16, 33, 61. `Meta_Ads_Audit_Implementation_Plan.md` Phase 1 first item: `[ ] Remove committed secrets from Git tracking`.
 
 ---
 
-## 5. What Appears Planned but Not Implemented
+## 5. What Appears Planned But Not Implemented
 
-### 5.1 Stripe/Billing Integration
-- **Documentation:** `Meta_Ads_Audit_Implementation_Plan.md` Section "Deferred: Stripe and Billing" — all 4 items unchecked.
-- **Code state:** `backend/app/routes/billing.py` exists with debug-only endpoints. `backend/app/models/subscription.py` has Stripe fields. No Stripe SDK, no webhook handlers, no Checkout integration.
-- **Status:** Intentionally deferred.
+### 5a. Stripe and Billing Integration
+The entire billing flow (Stripe Checkout, subscription webhooks, subscription state syncing) is explicitly deferred. The `/billing/dev/plan` dev-only endpoint exists but is gated behind `settings.debug`. No Stripe SDK is in `requirements.txt` or `frontend/package.json`.
 
-### 5.2 Production Environment Configuration
-- **Documentation:** Phase 5 items for production `DEBUG`, `ENVIRONMENT`, database, Redis, Meta, AI, SMTP, CORS, frontend URL, Sentry.
-- **Code state:** `backend/.env.production.example` exists as a template. No actual production config applied.
-- **Files involved:** Production hosting platform (not this repo).
+**File evidence:** `Meta_Ads_Audit_Implementation_Plan.md` "Deferred: Stripe and Billing" section.
 
-### 5.3 Frontend Production Environment
-- **Documentation:** Phase 5 — "Add frontend production environment values."
-- **Code state:** No `frontend/.env.production` file exists.
+### 5b. Real Production Environment Configuration
+No `frontend/.env.production` file exists. Production-ready backend env values (real CORS origins, production frontend URL, production SMTP, production Redis credentials, production database URL) are not configured beyond the local docker-compose defaults.
 
-### 5.4 Deterministic Engine Rule Depth (entire checklist)
-- **Documentation:** `Deterministic_Engine_Rule_Depth_Checklist.md` — all ~80 items unchecked across 15 sections.
-- **Code state:** Despite the checklist being unchecked, the engine already has 31 rules covering CTR, CPA, frequency, budget, spend, structure, trends, opportunity, aggregate, and account-level analysis. The checklist represents a deepening pass, not initial implementation. Many of its goals (fixture datasets, expected outcome specs, rule expansion, score calibration) are partially addressed by the existing test suite (169 tests including `test_fixture_scenarios.py` and `test_scoring_calibration.py`).
-- **Gap:** The checklist was created after the initial rule implementation but was never updated to reflect existing coverage. Fixture datasets exist as Python objects in `tests/engine/fixtures.py`, not as separate CSV/XLSX files.
+**File evidence:** `Meta_Ads_Audit_Implementation_Plan.md` Phase 5, items marked `[ ]`.
 
-### 5.5 Improvement Plan Dashboard Redesign
-- **Documentation:** `improvement-plan.md` contains detailed UI rewrite suggestions for dashboard, landing, settings, AI summary, and data sync.
-- **Code state:** Several items were already implemented (executive dashboard layout, top 3 actions, biggest leak card, scope/confidence bar, data limitations card, landing page CTA fixes, settings cleanup). Remaining items are primarily polish: hero landing proof artifacts, dashboard density reduction into tabs/collapsibles, AI summary consultant-brief restyle.
+### 5c. Export / Share Feature
+No export or share functionality exists in the frontend. `Audit_Report_Page_Optimization_Checklist.md` section 9 describes a clean bottom section for sharing/exporting — entirely unchecked.
 
-### 5.6 Export/Share Readiness
-- **Documentation:** `Audit_Report_Page_Optimization_Checklist.md` Section 9 — 5 unchecked items.
-- **Code state:** The audits page has a "Print/PDF" button (browser print). No structured export (CSV findings, PDF report, shareable link with data).
+### 5d. Validation Pass Against Real / Diverse Exports
+Section 10 of the audit report checklist defines a required validation pass across five export scenarios and a mobile/desktop polish pass. None are marked complete.
 
-### 5.7 E2E Tests
-- **Documentation:** `improvement-plan.md` Phase 2 — "Add one full E2E test flow and core failure-path tests."
-- **Code state:** No E2E test framework installed on frontend or backend.
-
-### 5.8 Analytics Layer
-- **Documentation:** `improvement-plan.md` Phase 2 — "Add a basic analytics layer to understand activation and conversion."
-- **Code state:** No analytics tracking (Mixpanel, PostHog, etc.) exists.
+### 5e. Analytics / Activation Tracking
+`improvement-plan.md` Phase 2 calls for a basic analytics layer. No analytics SDK appears in `frontend/package.json`.
 
 ---
 
 ## 6. Changes That Were Likely Already Applied
 
-The following items from documentation/checklists appear to already be implemented in source code. They should be marked as done so they are not repeated.
+The following items are documented as planned/open in some files but are already present in the source code and should NOT be re-implemented.
 
-### From `Meta_Ads_Audit_Implementation_Plan.md` (already marked [x]):
-
-All items marked `[x]` in the implementation plan are confirmed present in the codebase. The plan is accurate in its checkmarks.
-
-### From `Deterministic_Engine_Rule_Depth_Checklist.md` (all marked [ ] but partially done):
-
-| Checklist Item | Current State in Code |
-|----------------|----------------------|
-| Section 4: Weak CTR rule coverage at campaign/ad set level | `ctr_rules.py` has `WeakAccountCTR` and `HighFrequencyLowCTR` rules (2 rules). Campaign-level CTR is partially covered. |
-| Section 6: High CPA rules | `cpa_rules.py` has 3 rules: `HighCPA`, `HighCPAConcentration`, `CPAAboveAccountBaseline` |
-| Section 7: Fatigue rules | `frequency_rules.py` has 2 rules: `HighFrequency`, `HighFrequencyWeakeningCTR` |
-| Section 8: Budget imbalance rules | `budget_rules.py` has 3 rules: `BudgetConcentrationRisk`, `HighSpendLowROAS`, `SpendImbalance` |
-| Section 9: Aggregate-only handling | `aggregate_rules.py` has 3 rules specifically for aggregate context |
-| Section 11: Score calibration | `tests/engine/test_scoring_calibration.py` exists with calibration tests |
-| Section 1: Fixture datasets | `tests/engine/fixtures.py` has Python-based fixture datasets (not CSV files) |
-
-### From `Audit_Report_Page_Optimization_Checklist.md` (mix of [x] and [ ]):
-
-All items marked `[x]` are confirmed in the frontend code. Sections 1, 2, 4, and parts of 5–6 are implemented.
-
-### From `improvement-plan.md` (Quick Wins):
-
-| Quick Win | Status |
-|-----------|--------|
-| Fix corrupted characters in audits/page.tsx | Implemented — `cleanAiSummaryText()` utility used |
-| Add Sentry on frontend and backend | Implemented — `observability.py` + `sentry-init.tsx` |
-| Add rate limiting to auth and upload endpoints | Implemented — decorators in `auth.py`, `sync.py`, `audit.py` |
-| Split local-dev services from deployment in docker-compose | Implemented — `profiles: ["local-tools"]` for mailpit/adminer |
+| Documented as planned | Already in code | Evidence |
+|---|---|---|
+| "Configure global rate limiting middleware (currently per-endpoint, global middleware not yet added)" | Implemented | `backend/app/main.py` lines 30–45: `global_rate_limit_middleware` |
+| "Add retry actions to error states" | Implemented | `frontend/src/app/dashboard/audits/page.tsx` — retry state management present |
+| "Add Severity.WARNING as valid alias" | Implemented | `backend/app/engine/types.py` line 11 |
+| "Add missing category enum members CTR, FREQUENCY, CPA" | Implemented | `backend/app/engine/types.py` lines 25–27 |
+| "Fix AccountSnapshot imports by aliasing AccountAuditSnapshot" | Implemented | `backend/app/engine/rules/ctr_rules.py` line 3 |
+| "Add email_verified / email_verify_token to user model" | Implemented | Migration `20260320_0006`, `backend/app/models/user.py` |
+| "Add job_status, job_error, celery_task_id to AuditRun" | Implemented | Migration `20260320_0007`, `backend/app/models/audit.py` |
+| "Create spinner component" | Implemented | `frontend/src/components/ui/spinner.tsx` |
+| "Remove Base.metadata.create_all() from app startup" | Implemented | `backend/app/main.py` — no such call exists |
+| "Add resend-verification endpoint" | Implemented | `backend/app/routes/auth.py` `POST /auth/resend-verification` |
+| "Add DELETE /auth/data and DELETE /auth/account" | Implemented | `backend/app/routes/auth.py` lines 216–243 |
+| "Export cleanAiSummaryText() helper" | Implemented | `frontend/src/lib/audit.ts` — exported function |
+| "Keep billing /dev/plan behind DEBUG guard" | Implemented | `backend/app/routes/billing.py` lines 41–50 |
 
 ---
 
 ## 7. Inconsistencies and Technical Debt
 
-### 7.1 Stale Documentation
-- `Deterministic_Engine_Rule_Depth_Checklist.md` is entirely unchecked but significant portions are already implemented. This creates confusion about what actually needs to be done.
-- `improvement-plan.md` lists quick wins that are already done (Sentry, rate limiting, split docker services).
+**7a. Stale documentation — global rate limiting.** `Meta_Ads_Audit_Implementation_Plan.md` Phase 5 notes say "global middleware not yet added." The code has a fully-implemented global rate limit middleware. The doc note is stale and should be updated.
 
-### 7.2 Outdated / Misleading Items
-- The implementation plan's Phase 1 item "Remove committed secrets from Git tracking" implies secrets were committed. Investigation shows `.env` files were never committed to git history (only `.env.example` files were). The risk is that real secrets exist in local `.env` files that could be accidentally committed, not that they already were.
+**7b. Live credentials in tracked Git history.** `backend/.env` is now `.gitignore`'d but was previously tracked. Real credentials exist in Git history commits preceding `69220cc`. Must be cleaned with `git filter-repo` / BFG + secret rotation.
 
-### 7.3 Dead Code / Abandoned Files
-- `backend/test_sentry.pyecho` — appears to be a misnamed empty file (likely a typo for `test_sentry.py` with `echo` accidentally appended).
-- `frontend/src/components/dashboard/executive-summary.tsx` — unused component, not imported anywhere in the codebase. Likely superseded by the executive layer in `dashboard/page.tsx`.
+**7c. `ENVIRONMENT=production` in dev `.env`.** Running `docker compose up` locally starts with production flags and live credentials. This creates risk of production-environment side effects during development.
 
-### 7.4 Duplicate Logic
-- Confidence derivation exists in both frontend (`frontend/src/lib/audit.ts` → `deriveConfidence`) and implicitly in backend scoring (`backend/app/engine/scoring.py` confidence multiplier). These could diverge.
-- Top actions derivation in frontend (`deriveTopActions`) duplicates logic that could be computed server-side and included in the API response.
+**7d. 12 integration tests in last-failed cache.** `backend/.pytest_cache/v/cache/lastfailed` records all major integration test suites as failing. Almost certainly caused by missing PostgreSQL/Redis when last run locally, not logic failures — but unconfirmed until CI produces a green run.
 
-### 7.5 Missing Tests
-- **Frontend:** Zero tests. No test runner, no test framework, no test scripts.
-- **Backend integration tests:** 12 tests error due to SQLite path issues. These work in CI with PostgreSQL but fail locally.
-- **Engine tests:** 169 pass cleanly — this is a strong foundation.
+**7e. Duplicate import in `backend/app/engine/rules/__init__.py`.** `aggregate_rules` is imported twice (lines 1 and 3). Harmless but untidy.
 
-### 7.6 Configuration Gaps
-- `contact@yourdomain.com` hardcoded in `frontend/src/app/privacy/page.tsx` and `frontend/src/app/terms/page.tsx`. Should be an environment variable.
-- No `frontend/.env.production` file exists.
-- Sentry DSN not configured in any environment.
-- SMTP credentials not configured (Mailpit used locally).
-- Polling intervals (2.5s sync, 3s audit) are hardcoded in frontend components.
-- SessionStorage for auth state clears on tab close — may surprise users.
+**7f. Stray file `backend/test_sentry.pyecho`.** This file appears to be a misnamed test file (likely `test_sentry.py` with an accidental shell redirect suffix). It is unreachable by pytest and should be removed or renamed.
 
-### 7.7 Broken References
-- None detected. All imports resolve. All route references match between frontend and backend.
+**7g. No frontend tests.** No `*.test.tsx` or `*.spec.tsx` files exist. CI runs lint and build only — no component or unit tests for the frontend.
 
-### 7.8 Security Notes
-- `backend/.env` contains what appear to be real cryptographic keys. Even though not committed to git, these should be rotated before any production use.
-- The re-encryption script (`backend/scripts/reencrypt_tokens.py`) exists but has never been run (no tokens to re-encrypt in a fresh deployment).
-- Debug mode bypasses email verification and returns unlimited entitlements. The production guard exists but requires `ENVIRONMENT=production` to be set.
+**7h. Four overlapping planning documents.** Work is split across `Meta_Ads_Audit_Implementation_Plan.md`, `improvement-plan.md`, `Audit_Report_Page_Optimization_Checklist.md`, and `Deterministic_Engine_Rule_Depth_Checklist.md`. There is no single ordered backlog, which risks duplication or misaligned priorities.
+
+**7i. Entitlement limits applied but UI does not communicate them.** Free plan caps (3 findings, 2 recommendations, etc.) are enforced by `EntitlementService` but the settings page says "Advanced billing features are not enabled yet." Users on the free plan receive silently truncated results with no UI indication.
+
+**7j. `frontend/.env.local` in tracked files.** This file contains local dev env vars (`NEXT_PUBLIC_APP_URL`, `BACKEND_INTERNAL_URL`) and is not secret, but it is a pattern worth reviewing — `.env.local` files are conventionally excluded from tracking.
 
 ---
 
@@ -260,49 +246,43 @@ All items marked `[x]` are confirmed in the frontend code. Sections 1, 2, 4, and
 
 ### P0 — Blocking / Must Fix
 
-| # | Task | Why It Matters | Files Likely Involved | Complexity |
-|---|------|----------------|----------------------|------------|
-| 1 | Rotate SECRET_KEY and ENCRYPTION_KEY before any production deployment | Current keys may be shared/known; Fernet encryption and JWT signing depend on these being secret | `backend/.env`, `backend/scripts/reencrypt_tokens.py` | Low |
-| 2 | Set ENVIRONMENT=production and DEBUG=false in production config | Debug mode bypasses email verification, exposes debug routes, and grants unlimited entitlements | Production environment config, `backend/.env.production.example` | Low |
-| 3 | Fix backend integration tests (SQLite path / permission issue) | 12 tests erroring undermines CI confidence; blocking for reliable merge gates | `backend/tests/conftest.py` (change to in-memory SQLite or fix path permissions) | Low |
-| 4 | Add Redis service to CI pipeline | Backend tests may fail or skip Redis-dependent paths; rate limiting tests may be silently skipped | `.github/workflows/ci.yml` | Low |
-| 5 | Configure SMTP for production email delivery | Registration flow requires email verification; without real SMTP, users cannot verify accounts | Production environment config | Low |
-| 6 | Configure at least one AI provider for production | Audit reports without AI summaries are significantly less valuable | Production environment config | Low |
+| # | Task | Why It Matters | Files Involved | Complexity |
+|---|---|---|---|---|
+| P0-1 | **Rotate all live secrets and clean Git history** | Real `SECRET_KEY`, `ENCRYPTION_KEY`, Gemini API key, and Sentry DSN are in `backend/.env` and in Git history. This is a live security exposure. | `backend/.env`, `backend/scripts/reencrypt_tokens.py`, Git history rewrite | Medium |
+| P0-2 | **Run the full integration test suite in Docker Compose or CI and get to green** | The last-failed pytest cache shows 12 tests as unconfirmed. A clean CI run is required before launch. | `backend/tests/test_*.py`, `.github/workflows/ci.yml` | Low (run) / Medium (fix if real failures) |
+| P0-3 | **Define and apply a concrete production environment configuration** | No `frontend/.env.production` exists; production CORS, database, SMTP, and Redis are not configured. Production cannot be launched without this. | `backend/.env.production.example` (use as template), `frontend/.env.production` (create) | Medium |
 
 ### P1 — Important
 
-| # | Task | Why It Matters | Files Likely Involved | Complexity |
-|---|------|----------------|----------------------|------------|
-| 7 | Add at least one frontend E2E test (register → upload → audit → view report) | No frontend test coverage at all; critical user flow is unvalidated | New test framework setup + `frontend/e2e/` | Medium |
-| 8 | Make recommendation bodies dynamic from triggering finding metrics | Recommendations currently use template strings; users need entity-specific, metric-specific advice | `backend/app/engine/recommendations.py`, `frontend/src/components/dashboard/findings-list.tsx` | Medium |
-| 9 | Update Deterministic_Engine_Rule_Depth_Checklist.md to reflect existing coverage | Entirely unchecked checklist causes confusion; mark items that are already done | `Deterministic_Engine_Rule_Depth_Checklist.md` | Low |
-| 10 | Replace hardcoded `contact@yourdomain.com` in legal pages | Looks unprofessional; confuses users trying to reach support | `frontend/src/app/privacy/page.tsx`, `frontend/src/app/terms/page.tsx` | Low |
-| 11 | Remove unused `executive-summary.tsx` component and `test_sentry.pyecho` file | Dead code / stray files add confusion | `frontend/src/components/dashboard/executive-summary.tsx`, `backend/test_sentry.pyecho` | Low |
-| 12 | Add global rate limiting middleware (vs. per-endpoint only) | Per-endpoint decorators don't cover all routes; DDoS surface exists on unprotected endpoints | `backend/app/main.py` | Low |
-| 13 | Create `frontend/.env.production` with production values | Frontend build needs correct API URL, Sentry DSN for production | `frontend/.env.production` | Low |
+| # | Task | Why It Matters | Files Involved | Complexity |
+|---|---|---|---|---|
+| P1-1 | **Remove/rename `backend/test_sentry.pyecho`** | Stray file confuses directory structure and pytest discovery. | `backend/test_sentry.pyecho` | Low |
+| P1-2 | **Create fixture dataset folder and write expected-outcome specs** | Foundation for all engine quality work. Without fixture datasets and expected-outcome specs, rule changes cannot be validated safely. | New: `backend/tests/engine/datasets/` with CSV/XLSX samples | Medium |
+| P1-3 | **Connect recommendations to findings in the audit report UI** | Recommendations exist in the API response but are not rendered under the triggering finding. This is the single biggest gap between the current UI and the target experience. | `frontend/src/app/dashboard/audits/page.tsx`, `frontend/src/components/dashboard/findings-list.tsx` | Medium |
+| P1-4 | **Add pre-upload checklist and stronger empty state** | Users uploading weak exports get confusing output. A pre-upload checklist and clear empty state prevent drop-off during onboarding. | `frontend/src/components/dashboard/data-sync.tsx`, `frontend/src/app/dashboard/audits/page.tsx` | Low |
+| P1-5 | **Fix duplicate `aggregate_rules` import** | Minor cleanup; signals an unreviewed file. | `backend/app/engine/rules/__init__.py` | Low |
 
 ### P2 — Improvement
 
-| # | Task | Why It Matters | Files Likely Involved | Complexity |
-|---|------|----------------|----------------------|------------|
-| 14 | Improve AI summary to synthesize action plans from findings when provider gives generic output | Generic AI advice reduces perceived product value | `backend/app/services/ai_summary.py` | Medium |
-| 15 | Add pre-upload checklist and stronger empty states | Users need guidance on what to upload and what to expect | `frontend/src/components/dashboard/data-sync.tsx`, `frontend/src/app/dashboard/audits/page.tsx` | Medium |
-| 16 | Use business language throughout audit report (replace engine-speak) | "What needs attention now" reads better than severity categories to marketers | `frontend/src/app/dashboard/audits/page.tsx`, multiple dashboard components | Medium |
-| 17 | Add structured export (CSV findings, PDF report) | Marketers need to share audit results with stakeholders | `frontend/src/app/dashboard/audits/page.tsx`, new backend endpoint | High |
-| 18 | Deepen fixture datasets to cover more real-world scenarios | Strengthens engine validation and scoring calibration | `backend/tests/engine/fixtures.py`, new fixture files | Medium |
-| 19 | Add a basic analytics/activation tracking layer | Cannot measure user activation, retention, or conversion without analytics | Frontend pages + new analytics integration | Medium |
-| 20 | Consolidate confidence/top-actions derivation to server-side | Frontend and backend derive similar metrics independently; risk of divergence | `backend/app/routes/audit.py`, `frontend/src/lib/audit.ts` | Medium |
+| # | Task | Why It Matters | Files Involved | Complexity |
+|---|---|---|---|---|
+| P2-1 | **Expand CVR / conversion leakage rule coverage** | Clicks-without-conversions and high spend with weak conversion yield are high-value signals currently underrepresented in the engine. | `backend/app/engine/rules/cpa_rules.py`, `backend/tests/engine/` | Medium |
+| P2-2 | **Add "Actual vs Threshold" on every finding in the UI** | Makes findings feel quantified and trustworthy. Currently the data exists in API responses but is not consistently displayed. | `frontend/src/app/dashboard/audits/page.tsx`, `frontend/src/components/dashboard/findings-list.tsx` | Low |
+| P2-3 | **Synthesize action plan from deterministic findings as AI fallback** | When AI produces a weak or generic plan, the UI should fall back to the top deterministic findings instead of showing nothing useful. | `frontend/src/components/dashboard/ai-summary-block.tsx`, `frontend/src/lib/audit.ts` | Medium |
+| P2-4 | **Add export / share capability to audit report** | The target persona (founder/marketer) needs to share audit output with teams or clients. Section 9 of the report page checklist is entirely unimplemented. | New frontend component; `frontend/src/app/dashboard/audits/page.tsx` | Medium |
+| P2-5 | **Consolidate four planning documents into a single ordered backlog** | Reduces risk of duplicate work or missing items across planning documents. | `improvement-plan.md`, `Meta_Ads_Audit_Implementation_Plan.md`, `Audit_Report_Page_Optimization_Checklist.md`, `Deterministic_Engine_Rule_Depth_Checklist.md` | Low |
+| P2-6 | **Add frontend component tests** | No frontend test coverage exists. Even a small set of smoke tests for the audit report page and auth flow would reduce regression risk during the upcoming UI rework. | New: `frontend/src/__tests__/` | Medium |
 
 ---
 
 ## 9. Suggested Immediate Actions for the Next Development Session
 
-1. **Rotate keys and set production environment.** Generate new `SECRET_KEY` and `ENCRYPTION_KEY`, update `backend/.env`, set `ENVIRONMENT=production` and `DEBUG=false`. Run `scripts/reencrypt_tokens.py` if any tokens exist. This is the single most important security action. (Files: `backend/.env`, production config)
+1. **Rotate secrets and clean Git history (P0-1).** Run `backend/scripts/reencrypt_tokens.py` after generating fresh values for `SECRET_KEY` and `ENCRYPTION_KEY`. Revoke and regenerate the Gemini API key and Sentry DSN. Use `git filter-repo` or BFG to purge `backend/.env` from all prior commits, then force-push. This is the only true launch blocker that cannot be parallelized with other work.
 
-2. **Fix integration test failures.** Change `backend/tests/conftest.py` to use an in-memory SQLite database (`sqlite:///:memory:`) instead of a file path, or ensure the `tests/` directory is writable. This unblocks reliable CI. (Files: `backend/tests/conftest.py`)
+2. **Run the full test suite via Docker Compose and get to green (P0-2).** Execute `docker compose up -d && docker compose exec backend sh -lc "PYTHONPATH=/app pytest -q"`. Diagnose any real failures. The last-failed cache lists 12 tests, but these are almost certainly environment failures rather than logic bugs — the engine unit tests in `tests/engine/` have a complete fixture library and should pass cleanly.
 
-3. **Add Redis service to CI.** Add a Redis service container to `.github/workflows/ci.yml` similar to the existing PostgreSQL service, and set `REDIS_URL` in the test env. (Files: `.github/workflows/ci.yml`)
+3. **Create the fixture dataset folder and write 3 expected-outcome scenario specs (P1-2).** Create `backend/tests/engine/datasets/` with at minimum: a healthy-baseline CSV, a weak-CTR CSV, and a high-CPA CSV. Write three corresponding expected-outcome dicts (expected findings, severities, score ranges). This unblocks all further engine depth work and makes score calibration testable.
 
-4. **Update the Deterministic Engine Rule Depth Checklist.** Mark items that are already implemented (CTR rules, CPA rules, fatigue rules, budget rules, aggregate handling, scoring calibration tests, fixture datasets). This prevents redundant work. (Files: `Deterministic_Engine_Rule_Depth_Checklist.md`)
+4. **Connect recommendations to findings in the audit report UI (P1-3).** In `frontend/src/app/dashboard/audits/page.tsx`, add a lookup from each `AuditFinding.id` to its corresponding `Recommendation` entry and render the recommendation body directly beneath the finding card. The data already exists in the API response — this is purely a frontend rendering change with high user-visible impact.
 
-5. **Replace hardcoded contact email and remove dead files.** Update `contact@yourdomain.com` in legal pages, delete `backend/test_sentry.pyecho`, and remove `frontend/src/components/dashboard/executive-summary.tsx`. Quick cleanup that improves code hygiene. (Files: `frontend/src/app/privacy/page.tsx`, `frontend/src/app/terms/page.tsx`, `backend/test_sentry.pyecho`, `frontend/src/components/dashboard/executive-summary.tsx`)
+5. **Add the pre-upload checklist and improve the empty state in data-sync (P1-4).** In `frontend/src/components/dashboard/data-sync.tsx`, add a collapsible checklist: 30+ days, daily rows, spend, clicks, conversions, campaign and ad set fields. In `frontend/src/app/dashboard/audits/page.tsx`, strengthen the no-audit empty state to explain what to upload and what the user gets back. These are low-complexity changes with direct impact on first-run conversion.

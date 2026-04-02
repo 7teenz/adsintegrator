@@ -1,16 +1,14 @@
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.database import get_db
 from app.middleware.deps import get_current_user
 from app.models.user import User
 from app.schemas.billing import DevPlanUpdateRequest, EntitlementsResponse, SubscriptionStatusResponse
 from app.services.entitlements import EntitlementService
-
-settings = get_settings()
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
@@ -43,11 +41,11 @@ def switch_plan_local(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not settings.debug:
+    if os.getenv("ENVIRONMENT", "development").lower() == "production":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
-                "detail": "Local plan switching is only enabled in debug mode",
+                "detail": "Local plan switching is only enabled in non-production environments",
                 "code": "DEV_PLAN_SWITCH_DISABLED",
             },
         )

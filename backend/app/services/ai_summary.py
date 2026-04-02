@@ -14,44 +14,34 @@ logger = get_logger(__name__)
 
 SYSTEM_PROMPT = """
 You are a Meta Ads audit explanation assistant.
-You must only explain the structured data provided.
-Rules:
-- Do not calculate new metrics.
-- Do not invent facts or values.
-- Do not guarantee outcomes.
-- Keep language business-friendly and concise.
-- Explain why findings matter in business terms.
-- If data is missing, explicitly say it is not provided.
-Return strict JSON with keys:
-short_executive_summary, detailed_audit_explanation, prioritized_action_plan.
+Only explain the structured data provided — never invent metrics, values, or outcomes.
+Keep language business-friendly and concise.
+Return strict JSON with exactly three string keys:
+  short_executive_summary, detailed_audit_explanation, prioritized_action_plan.
 """.strip()
 
 SHORT_TEMPLATE = """
-Write a 3-5 sentence executive summary for a business stakeholder.
-Mention health score posture, estimated waste, top risk areas, and next-step urgency.
-Do not include any metric not present in INPUT.
+TASK 1 — short_executive_summary:
+3-5 sentences for a business stakeholder. Cover health score posture, estimated waste,
+top 1-2 risk areas, and urgency. Only cite metrics present in INPUT.
 """.strip()
 
 DETAILED_TEMPLATE = """
-Write a concise but insightful detailed explanation of findings.
-Group by severity and theme. Explain why each high-impact issue matters.
-Tie statements only to values in INPUT.
+TASK 2 — detailed_audit_explanation:
+Concise explanation grouped by severity. For each critical/high finding explain
+why it is costing money. Reference entity names and metric values from INPUT only.
 """.strip()
 
 ACTION_TEMPLATE = """
-Write a prioritized action plan with 3-6 specific actions derived from the findings in INPUT.
-For each action you MUST:
-- State the priority level (Critical / High / Medium)
-- Name the exact entity (campaign name, ad set name, or "account level") from the finding
-- Quote the actual metric value and threshold value if provided in the finding
-- Explain in one sentence why this issue is costing money or reducing efficiency
-- Give one concrete next step the ad manager should take (e.g. "Pause this campaign and reallocate budget to X", "Refresh ad creatives for this ad set", "Switch bid strategy to cost cap")
-- End with: "Next step: [specific action]"
-Rules:
-- Use only values that appear in INPUT — never invent numbers
-- Never use vague phrases like "address findings" or "review performance"
-- No guaranteed outcomes
-- Order actions by estimated_waste descending
+TASK 3 — prioritized_action_plan:
+3-6 numbered actions ordered by estimated_waste descending. Each action MUST include:
+- Priority level (Critical / High / Medium)
+- Exact entity name from INPUT
+- Actual metric vs threshold (if available in INPUT)
+- One sentence: why this is losing money or reducing efficiency
+- "Why it matters: [reason]"
+- "Next step: [one concrete action, e.g. pause campaign, refresh creatives, tighten audience]"
+Never use vague phrases. Never guarantee outcomes. Only reference values from INPUT.
 """.strip()
 
 
@@ -122,8 +112,7 @@ class AISummaryService:
         data_mode = "period_aggregate" if run.analysis_start == run.analysis_end else "daily_breakdown"
         limitations: list[str] = []
         if data_mode == "period_aggregate":
-            limitations.append("This audit was generated from an aggregate imported report rather than daily time-series data.")
-            limitations.append("Trend and anomaly interpretations are limited for this run.")
+            limitations.append("Aggregate report — trend analysis is limited.")
 
         recommendation_by_finding_id = {
             item.audit_finding_id: item
@@ -131,45 +120,40 @@ class AISummaryService:
             if item.audit_finding_id
         }
 
-        findings = sorted(
-            [
-                {
-                    "finding_id": item.id,
-                    "rule_id": item.rule_id,
-                    "severity": item.severity,
-                    "category": item.category,
-                    "title": item.title,
-                    "description": item.description,
-                    "entity_name": item.entity_name,
-                    "metric_value": item.metric_value,
-                    "threshold_value": item.threshold_value,
-                    "estimated_waste": item.estimated_waste,
-                    "estimated_uplift": item.estimated_uplift,
-                    "linked_recommendation_title": recommendation_by_finding_id.get(item.id).title if recommendation_by_finding_id.get(item.id) else None,
-                    "linked_recommendation_body": recommendation_by_finding_id.get(item.id).body if recommendation_by_finding_id.get(item.id) else None,
-                }
-                for item in run.findings
-            ],
-            key=lambda item: (cls._severity_rank(item["severity"]), item["estimated_waste"]),
+        HIGH_SEVERITY = {"critical", "high"}
+        _DESC_TRUNCATE_LOW = 120  # chars for medium/low severity descriptions
+
+        all_findings = sorted(
+            run.findings,
+            key=lambda item: (cls._severity_rank(item.severity), item.estimated_waste or 0),
             reverse=True,
         )
 
-        opportunities = sorted(
-            [
-                {
-                    "title": item.title,
-                    "entity_name": item.entity_name,
-                    "estimated_uplift": item.estimated_uplift,
-                    "estimated_waste": item.estimated_waste,
-                }
-                for item in run.findings
-            ],
-            key=lambda item: item["estimated_uplift"],
-            reverse=True,
-        )[:5]
+        findings = []
+        for item in all_findings:
+            rec = recommendation_by_finding_id.get(item.id)
+            description = item.description or ""
+            # Truncate descriptions for non-critical findings to reduce token waste
+            if item.severity not in HIGH_SEVERITY and len(description) > _DESC_TRUNCATE_LOW:
+                description = description[:_DESC_TRUNCATE_LOW].rsplit(" ", 1)[0] + "…"
+
+            findings.append({
+                "rule_id": item.rule_id,
+                "severity": item.severity,
+                "category": item.category,
+                "title": item.title,
+                "description": description,
+                "entity_name": item.entity_name,
+                "metric_value": item.metric_value,
+                "threshold_value": item.threshold_value,
+                "estimated_waste": item.estimated_waste,
+                "estimated_uplift": item.estimated_uplift,
+                "recommendation": rec.title if rec else None,
+                "recommendation_title": rec.title if rec else None,
+                "recommendation_body": rec.body if rec else None,
+            })
 
         return {
-            "audit_run_id": run.id,
             "data_mode": data_mode,
             "limitations": limitations,
             "health_score": run.health_score,
@@ -182,23 +166,34 @@ class AISummaryService:
                 "end": run.analysis_end.isoformat(),
             },
             "findings": findings,
-            "top_opportunities": opportunities,
         }
 
     @staticmethod
-    def _format_metric_for_summary(value: Any, category: str) -> str | None:
+    def _is_percentage_metric(item: dict[str, Any]) -> bool:
+        category = str(item.get("category") or "").lower()
+        rule_id = str(item.get("rule_id") or "").lower()
+        title = str(item.get("title") or "").lower()
+
+        if category == "ctr" or "ctr" in rule_id or "ctr" in title:
+            return True
+        if "conversion rate" in title or "cvr" in rule_id or "cvr" in title:
+            return True
+        return False
+
+    @classmethod
+    def _format_metric_for_summary(cls, value: Any, item: dict[str, Any]) -> str | None:
         if value is None:
             return None
         try:
             numeric = float(value)
         except (TypeError, ValueError):
             return None
-        normalized = category.lower()
-        if category == "PERFORMANCE" or "ctr" in normalized or "conversion" in normalized:
-            return f"{numeric * 100:.2f}%"
-        if category in {"BUDGET", "CPA", "SPEND"} or any(token in normalized for token in ("spend", "cpa", "cpc", "cpm")):
+        normalized = str(item.get("category") or "").lower()
+        if cls._is_percentage_metric(item):
+            return f"{numeric:.2f}%"
+        if normalized in {"budget", "cpa", "spend"} or any(token in normalized for token in ("spend", "cpa", "cpc", "cpm")):
             return f"${numeric:.2f}"
-        if category == "FREQUENCY":
+        if normalized == "frequency":
             return f"{numeric:.2f}x"
         return f"{numeric:.2f}"
 
@@ -238,10 +233,17 @@ class AISummaryService:
 
     @classmethod
     def _next_step_for_finding(cls, item: dict[str, Any]) -> str:
-        """Return a specific next-step string based on category and recommendation body."""
+        """Return a specific next-step string based on category and recommendation title."""
         category = (item.get("category") or "").lower()
         rule_id = (item.get("rule_id") or "").lower()
-        recommendation_body = (item.get("linked_recommendation_body") or "").lower()
+        # Use recommendation title (formerly body) for keyword matching
+        recommendation_hint = (
+            item.get("recommendation_body")
+            or item.get("linked_recommendation_body")
+            or item.get("recommendation_title")
+            or item.get("recommendation")
+            or ""
+        ).lower()
 
         # Rule-ID-specific overrides first
         if "weak_cvr" in rule_id:
@@ -249,12 +251,12 @@ class AISummaryService:
         if "uneven_daily_spend" in rule_id:
             return cls._CATEGORY_NEXT_STEPS["uneven_daily_spend"]
 
-        # Recommendation-body keyword overrides
-        if "landing" in recommendation_body:
+        # Recommendation keyword overrides
+        if "landing" in recommendation_hint:
             return "Inspect the landing page experience, offer alignment, and tracking path — confirm the pixel fires on the conversion event."
-        if "creative" in recommendation_body:
+        if "creative" in recommendation_hint:
             return "Refresh creatives: test a new hook, headline, and visual for this campaign and pause the lowest-CTR ad variants."
-        if "reallocat" in recommendation_body or "budget" in recommendation_body:
+        if "reallocat" in recommendation_hint or "budget" in recommendation_hint:
             return "Reallocate budget from this campaign toward the highest-ROAS campaign in the account."
 
         # Category fallback
@@ -266,7 +268,7 @@ class AISummaryService:
 
     @classmethod
     def _fallback_action_plan(cls, payload: dict[str, Any]) -> str:
-        findings = payload.get("findings", [])[:5]
+        findings = payload.get("findings", [])
         if not findings:
             return (
                 "1. Confirm the imported report covers at least 30 days with daily rows.\n"
@@ -275,14 +277,14 @@ class AISummaryService:
             )
 
         # Sort by estimated waste descending for maximum impact ordering
-        findings = sorted(findings, key=lambda f: f.get("estimated_waste", 0), reverse=True)[:3]
+        findings = sorted(findings, key=lambda f: f.get("estimated_waste", 0), reverse=True)[:5]
 
         actions: list[str] = []
         for index, item in enumerate(findings, start=1):
             severity = cls._title_case_severity(item.get("severity"))
             entity_name = item.get("entity_name") or "the affected entity"
-            actual = cls._format_metric_for_summary(item.get("metric_value"), item.get("category", ""))
-            threshold = cls._format_metric_for_summary(item.get("threshold_value"), item.get("category", ""))
+            actual = cls._format_metric_for_summary(item.get("metric_value"), item)
+            threshold = cls._format_metric_for_summary(item.get("threshold_value"), item)
             waste = item.get("estimated_waste", 0)
 
             metric_text = ""
@@ -293,7 +295,13 @@ class AISummaryService:
 
             waste_text = f" Estimated waste: ${waste:.0f}." if waste > 0 else ""
 
-            recommendation_title = item.get("linked_recommendation_title") or item.get("title") or "Review this issue"
+            recommendation_title = (
+                item.get("recommendation_title")
+                or item.get("recommendation")
+                or item.get("linked_recommendation_title")
+                or item.get("title")
+                or "Review this issue"
+            )
             why_it_matters = cls._clean_sentence(
                 item.get("description"),
                 "This issue is directly reducing account efficiency.",
@@ -408,11 +416,10 @@ class AISummaryService:
     def _openai_request(cls, payload: dict[str, Any], api_key: str) -> dict[str, str]:
         url = f"{settings.ai_openai_base_url.rstrip('/')}/chat/completions"
         user_prompt = (
-            "INPUT JSON:\n"
-            f"{json.dumps(payload, ensure_ascii=True)}\n\n"
-            f"TASK 1:\n{SHORT_TEMPLATE}\n\n"
-            f"TASK 2:\n{DETAILED_TEMPLATE}\n\n"
-            f"TASK 3:\n{ACTION_TEMPLATE}"
+            f"INPUT JSON:\n{json.dumps(payload, ensure_ascii=True)}\n\n"
+            f"{SHORT_TEMPLATE}\n\n"
+            f"{DETAILED_TEMPLATE}\n\n"
+            f"{ACTION_TEMPLATE}"
         )
 
         body = {
@@ -445,11 +452,10 @@ class AISummaryService:
     def _anthropic_request(cls, payload: dict[str, Any], api_key: str) -> dict[str, str]:
         url = f"{settings.ai_anthropic_base_url.rstrip('/')}/messages"
         user_prompt = (
-            "INPUT JSON:\n"
-            f"{json.dumps(payload, ensure_ascii=True)}\n\n"
-            f"TASK 1:\n{SHORT_TEMPLATE}\n\n"
-            f"TASK 2:\n{DETAILED_TEMPLATE}\n\n"
-            f"TASK 3:\n{ACTION_TEMPLATE}\n\n"
+            f"INPUT JSON:\n{json.dumps(payload, ensure_ascii=True)}\n\n"
+            f"{SHORT_TEMPLATE}\n\n"
+            f"{DETAILED_TEMPLATE}\n\n"
+            f"{ACTION_TEMPLATE}\n\n"
             "Return strict JSON only."
         )
 
@@ -481,16 +487,25 @@ class AISummaryService:
         parsed = json.loads(cls._extract_json_text("".join(text_blocks).strip()))
         return cls._normalize_output(parsed, payload)
 
+    # Gemini responseSchema enforces exact output structure, eliminating key aliasing needs
+    _GEMINI_RESPONSE_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "short_executive_summary": {"type": "string"},
+            "detailed_audit_explanation": {"type": "string"},
+            "prioritized_action_plan": {"type": "string"},
+        },
+        "required": ["short_executive_summary", "detailed_audit_explanation", "prioritized_action_plan"],
+    }
+
     @classmethod
     def _gemini_request(cls, payload: dict[str, Any], api_key: str) -> dict[str, str]:
         url = f"{settings.ai_gemini_base_url.rstrip('/')}/models/{settings.ai_model}:generateContent"
         user_prompt = (
-            "INPUT JSON:\n"
-            f"{json.dumps(payload, ensure_ascii=True)}\n\n"
-            f"TASK 1:\n{SHORT_TEMPLATE}\n\n"
-            f"TASK 2:\n{DETAILED_TEMPLATE}\n\n"
-            f"TASK 3:\n{ACTION_TEMPLATE}\n\n"
-            "Return strict JSON only."
+            f"INPUT JSON:\n{json.dumps(payload, ensure_ascii=True)}\n\n"
+            f"{SHORT_TEMPLATE}\n\n"
+            f"{DETAILED_TEMPLATE}\n\n"
+            f"{ACTION_TEMPLATE}"
         )
 
         body = {
@@ -506,6 +521,7 @@ class AISummaryService:
             "generationConfig": {
                 "temperature": 0.1,
                 "responseMimeType": "application/json",
+                "responseSchema": cls._GEMINI_RESPONSE_SCHEMA,
             },
         }
 

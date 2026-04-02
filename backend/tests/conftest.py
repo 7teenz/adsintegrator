@@ -14,8 +14,13 @@ TEST_DB_PATH = Path(__file__).resolve().parent / "test_phase8.sqlite3"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("ENCRYPTION_KEY", "svJt37a4pzcIQ91auVTrJU5Wo9VrfTZ548d2SkkT2tc=")
-os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("DEBUG", "false")
+os.environ["ENVIRONMENT"] = "test"
 os.environ.setdefault("META_APP_ID", "mock")
+
+from app.config import get_settings  # noqa: E402
+
+get_settings.cache_clear()
 
 from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402

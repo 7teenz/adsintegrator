@@ -16,7 +16,7 @@ def test_csv_import_populates_sync_summary(client, db_session):
     )
 
     upload = client.post(
-        "/api/sync/import-csv",
+        "/api/sync/import-report",
         headers=headers,
         files={"file": ("history.csv", csv_content, "text/csv")},
         data={"replace_existing": "true"},
@@ -44,7 +44,7 @@ def test_csv_import_supports_russian_ads_manager_headers(client, db_session):
     )
 
     upload = client.post(
-        "/api/sync/import-csv",
+        "/api/sync/import-report",
         headers=headers,
         files={"file": ("ru-history.csv", csv_content.encode("utf-8"), "text/csv")},
         data={"replace_existing": "true"},

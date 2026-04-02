@@ -6,7 +6,7 @@ from app.engine.collector import collect_account_data
 from app.engine.recommendations import apply_recommendation
 from app.engine.rules import get_all_rules
 from app.engine.scoring import compute_scores
-from app.engine.types import Finding, Severity
+from app.engine.types import AccountAuditSnapshot, Finding, Severity
 from app.models.audit import AuditFinding, AuditRun, AuditScore, Recommendation
 
 
@@ -16,6 +16,46 @@ SEVERITY_ORDER = {
     Severity.MEDIUM: 2,
     Severity.LOW: 3,
 }
+
+HIERARCHICAL_RULE_FAMILIES = {
+    "ctr_low_campaign": "ctr_low",
+    "ctr_low_adset": "ctr_low",
+    "cpa_high_campaign": "cpa_high",
+    "cpa_high_adset": "cpa_high",
+    "freq_high": "freq_high",
+    "freq_high_adset": "freq_high",
+}
+
+
+def _dedupe_hierarchical_findings(
+    findings: list[Finding],
+    snapshot: AccountAuditSnapshot,
+) -> list[Finding]:
+    """Suppress child findings when the matching campaign-level issue already fired."""
+    ad_set_to_campaign = {
+        ad_set.ad_set_id: ad_set.campaign_id
+        for ad_set in snapshot.ad_sets
+    }
+    parent_findings = {
+        (finding.category, HIERARCHICAL_RULE_FAMILIES[finding.rule_id], finding.entity_id)
+        for finding in findings
+        if finding.entity_type == "campaign" and finding.rule_id in HIERARCHICAL_RULE_FAMILIES
+    }
+
+    deduped: list[Finding] = []
+    for finding in findings:
+        if finding.entity_type != "ad_set":
+            deduped.append(finding)
+            continue
+
+        family = HIERARCHICAL_RULE_FAMILIES.get(finding.rule_id)
+        campaign_id = ad_set_to_campaign.get(finding.entity_id)
+        if family and campaign_id and (finding.category, family, campaign_id) in parent_findings:
+            continue
+
+        deduped.append(finding)
+
+    return deduped
 
 
 def run_audit(db: Session, ad_account_id: str, user_id: str) -> AuditRun:
@@ -47,6 +87,7 @@ def populate_audit_run(db: Session, audit_run: AuditRun) -> AuditRun:
         findings.extend(rule.evaluate(snapshot))
 
     findings = [apply_recommendation(finding) for finding in findings]
+    findings = _dedupe_hierarchical_findings(findings, snapshot)
     findings.sort(key=lambda finding: SEVERITY_ORDER[finding.severity])
 
     analysis_days = max(1, (snapshot.analysis_end - snapshot.analysis_start).days + 1)

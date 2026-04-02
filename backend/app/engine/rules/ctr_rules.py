@@ -99,3 +99,62 @@ class DecliningCTRRule(AuditRule):
                     threshold_value=avg_first,
                 ))
         return findings
+
+
+@register_rule
+class LowCTRAdSetRule(AuditRule):
+    rule_id = "ctr_low_adset"
+    category = Category.CTR
+    description = "Flags individual ad sets with critically low click-through rates"
+
+    def evaluate(self, snapshot: AccountSnapshot) -> list[Finding]:
+        findings: list[Finding] = []
+        for ad_set in snapshot.ad_sets:
+            if ad_set.status != "ACTIVE" or ad_set.total_impressions < 500:
+                continue
+            # Skip if spend is negligible (avoid noise on very small ad sets)
+            if ad_set.total_spend < 10:
+                continue
+
+            ctr = ad_set.ctr  # already a percentage value
+
+            if ctr < CTR_CRITICAL_THRESHOLD:
+                waste = ad_set.total_spend * 0.4
+                findings.append(Finding(
+                    rule_id=self.rule_id,
+                    severity=Severity.CRITICAL,
+                    category=Category.CTR,
+                    title=f"Ad set CTR critically low: {ctr:.2f}%",
+                    description=(
+                        f"Ad set '{ad_set.ad_set_name}' has a CTR of {ctr:.2f}%, "
+                        f"well below the {CTR_CRITICAL_THRESHOLD}% threshold. "
+                        f"This ad set is burning budget with minimal engagement — "
+                        f"review creative assets and audience targeting."
+                    ),
+                    entity_type="ad_set",
+                    entity_id=ad_set.ad_set_id,
+                    entity_name=ad_set.ad_set_name,
+                    metric_value=ctr,
+                    threshold_value=CTR_CRITICAL_THRESHOLD,
+                    estimated_waste=waste,
+                ))
+            elif ctr < CTR_WARNING_THRESHOLD:
+                waste = ad_set.total_spend * 0.2
+                findings.append(Finding(
+                    rule_id=self.rule_id,
+                    severity=Severity.WARNING,
+                    category=Category.CTR,
+                    title=f"Ad set CTR below benchmark: {ctr:.2f}%",
+                    description=(
+                        f"Ad set '{ad_set.ad_set_name}' CTR is {ctr:.2f}%, "
+                        f"below the {CTR_WARNING_THRESHOLD}% benchmark. "
+                        f"Consider testing new creatives or refining audience parameters."
+                    ),
+                    entity_type="ad_set",
+                    entity_id=ad_set.ad_set_id,
+                    entity_name=ad_set.ad_set_name,
+                    metric_value=ctr,
+                    threshold_value=CTR_WARNING_THRESHOLD,
+                    estimated_waste=waste,
+                ))
+        return findings

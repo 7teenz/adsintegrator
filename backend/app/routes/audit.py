@@ -343,6 +343,7 @@ def run_new_audit(request: Request, current_user: User = Depends(get_current_use
     db.commit()
     db.refresh(run)
 
+    initial_status = run.job_status
     task = run_audit_job.delay(run.id)
     run.celery_task_id = task.id
     db.commit()
@@ -356,7 +357,7 @@ def run_new_audit(request: Request, current_user: User = Depends(get_current_use
             "code": "AUDIT_STARTED",
         },
     )
-    return AuditJobResponse(job_id=run.id, status=run.job_status)
+    return AuditJobResponse(job_id=run.id, status=initial_status)
 
 
 @router.get("/job/{job_id}", response_model=AuditJobStatusResponse)
@@ -485,7 +486,13 @@ def get_audit_dashboard(current_user: User = Depends(get_current_user), db: Sess
         .subquery()
     )
     worst_campaigns = (
-        db.query(Campaign, campaign_agg)
+        db.query(
+            Campaign,
+            campaign_agg.c.total_spend,
+            campaign_agg.c.avg_roas,
+            campaign_agg.c.total_conversions,
+            campaign_agg.c.avg_ctr,
+        )
         .join(campaign_agg, campaign_agg.c.campaign_id == Campaign.id)
         .filter(Campaign.ad_account_id == account.id)
         .order_by(campaign_agg.c.avg_roas.asc(), campaign_agg.c.total_spend.desc())
@@ -505,7 +512,13 @@ def get_audit_dashboard(current_user: User = Depends(get_current_user), db: Sess
         .subquery()
     )
     worst_adsets = (
-        db.query(AdSet, adset_agg)
+        db.query(
+            AdSet,
+            adset_agg.c.total_spend,
+            adset_agg.c.avg_roas,
+            adset_agg.c.total_conversions,
+            adset_agg.c.avg_ctr,
+        )
         .join(adset_agg, adset_agg.c.ad_set_id == AdSet.id)
         .filter(AdSet.ad_account_id == account.id)
         .order_by(adset_agg.c.avg_roas.asc(), adset_agg.c.total_spend.desc())
@@ -523,25 +536,25 @@ def get_audit_dashboard(current_user: User = Depends(get_current_user), db: Sess
         spend_roas_trend=trend,
         worst_campaigns=[
             LeaderboardItemResponse(
-                entity_id=campaign.meta_campaign_id,
-                entity_name=campaign.name,
-                spend=float(agg.total_spend or 0),
-                roas=float(agg.avg_roas or 0),
-                cpa=float(agg.total_spend or 0) / max(int(agg.total_conversions or 0), 1) if (agg.total_conversions or 0) > 0 else 0.0,
-                ctr=float(agg.avg_ctr or 0),
+                entity_id=row[0].meta_campaign_id,
+                entity_name=row[0].name,
+                spend=float(row[1] or 0),
+                roas=float(row[2] or 0),
+                cpa=float(row[1] or 0) / max(int(row[3] or 0), 1) if (row[3] or 0) > 0 else 0.0,
+                ctr=float(row[4] or 0),
             )
-            for campaign, agg in worst_campaigns
+            for row in worst_campaigns
         ],
         worst_adsets=[
             LeaderboardItemResponse(
-                entity_id=adset.meta_adset_id,
-                entity_name=adset.name,
-                spend=float(agg.total_spend or 0),
-                roas=float(agg.avg_roas or 0),
-                cpa=float(agg.total_spend or 0) / max(int(agg.total_conversions or 0), 1) if (agg.total_conversions or 0) > 0 else 0.0,
-                ctr=float(agg.avg_ctr or 0),
+                entity_id=row[0].meta_adset_id,
+                entity_name=row[0].name,
+                spend=float(row[1] or 0),
+                roas=float(row[2] or 0),
+                cpa=float(row[1] or 0) / max(int(row[3] or 0), 1) if (row[3] or 0) > 0 else 0.0,
+                ctr=float(row[4] or 0),
             )
-            for adset, agg in worst_adsets
+            for row in worst_adsets
         ],
     )
 
@@ -551,7 +564,9 @@ def get_latest_findings(current_user: User = Depends(get_current_user), db: Sess
     run = _latest_completed_run_query(db, current_user.id).first()
     if not run:
         return []
-    return [_finding_response(finding, run) for finding in run.findings]
+    entitlements = EntitlementService.get_entitlements(db, current_user.id)
+    findings = run.findings[: entitlements.max_findings]
+    return [_finding_response(finding, run) for finding in findings]
 
 
 @router.get("/latest/score", response_model=list[AuditScoreResponse])

@@ -29,9 +29,7 @@ services:
     volumes:
       - redisdata:/data
     healthcheck:
-      test: >
-        ["CMD-SHELL",
-        "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a $$REDIS_PASSWORD ping; else redis-cli ping; fi"]
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a $$REDIS_PASSWORD ping; else redis-cli ping; fi"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -55,7 +53,8 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - ./backend/.env
+      - path: ./backend/.env
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,7 +66,8 @@ services:
     restart: unless-stopped
     command: celery -A app.celery_app:celery worker --loglevel=info --concurrency=2
     env_file:
-      - ./backend/.env
+      - path: ./backend/.env
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,7 +80,10 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - ./frontend/.env.local
+      - path: ./frontend/.env.local
+        required: false
+      - path: ./frontend/.env.production
+        required: false
     environment:
       HOSTNAME: 0.0.0.0
       PORT: 3000

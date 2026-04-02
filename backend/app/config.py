@@ -71,10 +71,14 @@ class Settings(BaseSettings):
 
     @field_validator("debug", mode="before")
     @classmethod
-    def disable_debug_in_production(cls, value: bool) -> bool:
-        if os.getenv("ENVIRONMENT", "development").lower() == "production" and value:
+    def disable_debug_in_production(cls, value) -> bool:
+        if isinstance(value, str):
+            coerced = value.lower() not in {"false", "0", "no", "off", ""}
+        else:
+            coerced = bool(value)
+        if os.getenv("ENVIRONMENT", "development").lower() == "production" and coerced:
             return False
-        return bool(value)
+        return coerced
 
     @field_validator("cors_origins", mode="before")
     @classmethod

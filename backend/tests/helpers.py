@@ -151,6 +151,7 @@ def seed_audit_run_with_findings(db: Session, user_id: str, account_id: str, cou
         ad_count=1,
         analysis_start=date.today() - timedelta(days=30),
         analysis_end=date.today() - timedelta(days=1),
+        job_status="completed",
     )
     db.add(run)
     db.flush()

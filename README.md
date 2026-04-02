@@ -24,6 +24,11 @@ cp frontend/.env.example frontend/.env.local
 docker compose up -d --build
 ```
 
+Windows PowerShell helper if Docker rebuilds fail because `docker-credential-desktop` is not on `PATH`:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\docker-compose.ps1 up -d --build
+```
+
 Optional local tools:
 ```bash
 docker compose --profile local-tools up -d
@@ -150,6 +155,10 @@ Backend unreachable from frontend:
 
 Migration import errors in container:
 - run Alembic with `PYTHONPATH=/app`
+
+Docker rebuild fails with `docker-credential-desktop` not found on Windows:
+- run `powershell -ExecutionPolicy Bypass -File .\scripts\docker-compose.ps1 up -d --build`
+- for backend-only rebuild plus the focused AI summary test, run `powershell -ExecutionPolicy Bypass -File .\scripts\rebuild-backend.ps1`
 
 `usePlan must be used inside <PlanProvider>` in frontend:
 - ensure dashboard layout wraps children with `PlanProvider`

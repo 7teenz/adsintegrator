@@ -205,13 +205,19 @@ export function formatPercent(value: number): string {
 
 export function formatFindingMetric(value: number, category: string): string {
   const normalized = category.toLowerCase();
-  if (category === "PERFORMANCE" || normalized.includes("ctr") || normalized.includes("conversion")) {
-    return `${(value * 100).toFixed(2)}%`;
+  // CTR and performance categories store values already as percentages (e.g., 0.3 means 0.3%)
+  if (normalized === "ctr" || normalized === "performance" ||
+      normalized.includes("ctr") || normalized.includes("conversion")) {
+    return `${value.toFixed(2)}%`;
   }
-  if (category === "BUDGET" || normalized.includes("spend") || normalized.includes("cpa") || normalized.includes("cpc") || normalized.includes("cpm")) {
+  // Budget and CPA categories store dollar amounts
+  if (normalized === "budget" || normalized === "cpa" || normalized === "placement" ||
+      normalized.includes("spend") || normalized.includes("cpa") ||
+      normalized.includes("cpc") || normalized.includes("cpm")) {
     return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   }
-  if (category === "FREQUENCY") {
+  // Frequency values are raw multipliers (e.g., 4.5x)
+  if (normalized === "frequency") {
     return `${value.toFixed(2)}x`;
   }
   return value.toFixed(2);
@@ -277,6 +283,36 @@ export function deriveConfidence(
     confidenceLabel: "Low",
     confidenceReason: "The current dataset is short or sparse, so only the clearest issues should be treated as decisive.",
   };
+}
+
+export function deriveDeterministicActionPlan(report: AuditReport): string[] {
+  const topFindings = [...report.findings]
+    .sort((a, b) => {
+      const aScore = a.estimated_waste + a.estimated_uplift + a.score_impact * 100;
+      const bScore = b.estimated_waste + b.estimated_uplift + b.score_impact * 100;
+      return bScore - aScore;
+    })
+    .slice(0, 3);
+
+  const recByFindingId = new Map(
+    report.recommendations.flatMap((r) => (r.audit_finding_id ? [[r.audit_finding_id, r]] : [])),
+  );
+  const recByKey = new Map(report.recommendations.map((r) => [r.recommendation_key, r]));
+
+  return topFindings.map((finding) => {
+    const rec =
+      recByFindingId.get(finding.id) ||
+      (finding.recommendation_key ? recByKey.get(finding.recommendation_key) : undefined);
+    const entity = finding.entity_name || finding.affected_entity;
+    const impact = finding.estimated_waste + finding.estimated_uplift;
+    const impactText = impact > 0 ? ` (${formatCurrency(impact)} impact)` : "";
+    if (rec) {
+      const firstSentence = rec.body.split(/[.!?]/)[0].trim();
+      return `${entity}: ${firstSentence}${impactText}.`;
+    }
+    const firstSentence = finding.description.split(/[.!?]/)[0].trim();
+    return `${entity}: ${firstSentence}${impactText}.`;
+  });
 }
 
 export function deriveTopActions(report: AuditReport): DerivedTopAction[] {

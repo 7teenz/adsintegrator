@@ -1,6 +1,23 @@
 {
   "permissions": {
     "allow": [
+      "Bash(date:*)",
+      "Bash(echo:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(wc:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sort:*)",
+      "Bash(grep:*)",
+      "Bash(tr:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git tag:*)",
       "Bash(python -m pytest tests/engine/ tests/test_scoring_engine.py -v --tb=short)",
       "Bash(python -m pytest tests/engine/test_rules.py::TestLowCTRRule -v --tb=short --no-header)",
       "Bash(python -c \":*)",
@@ -17,7 +34,18 @@
       "Bash(python -c \"import os; os.environ[''DATABASE_URL'']=''sqlite:///./test.db''; os.environ[''SECRET_KEY'']=''test''; os.environ[''ENCRYPTION_KEY'']=''svJt37a4pzcIQ91auVTrJU5Wo9VrfTZ548d2SkkT2tc=''; os.environ[''DEBUG'']=''true''; os.environ[''META_APP_ID'']=''mock''; from app.services.csv_import import CsvImportService; print\\(''ok''\\)\")",
       "Bash(python -c \"import os; os.environ[''DATABASE_URL'']=''sqlite:///./test.db''; os.environ[''SECRET_KEY'']=''test''; os.environ[''ENCRYPTION_KEY'']=''svJt37a4pzcIQ91auVTrJU5Wo9VrfTZ548d2SkkT2tc=''; os.environ[''DEBUG'']=''true''; os.environ[''META_APP_ID'']=''mock''; from app.main import app; print\\(''app imported ok''\\)\")",
       "Bash(python -m pytest tests/engine/ tests/test_scoring_engine.py -v --tb=short --no-header)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(py --version)",
+      "Bash(pip show:*)",
+      "Bash(docker compose:*)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/secrets/*)",
+      "Read(**/*credential*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)"
     ]
   }
 }
