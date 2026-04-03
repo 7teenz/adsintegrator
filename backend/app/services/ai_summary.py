@@ -30,6 +30,7 @@ DETAILED_TEMPLATE = """
 TASK 2 — detailed_audit_explanation:
 Concise explanation grouped by severity. For each critical/high finding explain
 why it is costing money. Reference entity names and metric values from INPUT only.
+Use campaign_performance.worst_performers to name the highest-waste campaigns explicitly.
 """.strip()
 
 ACTION_TEMPLATE = """
@@ -108,6 +109,63 @@ class AISummaryService:
         return order.get(level, 0)
 
     @classmethod
+    def _build_campaign_digest(cls, run: AuditRun) -> dict[str, Any]:
+        """Derive per-campaign performance summary from findings for AI context."""
+        campaign_data: dict[str, dict[str, Any]] = {}
+
+        for f in run.findings:
+            if f.entity_type != "campaign":
+                continue
+            name = f.entity_name
+            if name not in campaign_data:
+                campaign_data[name] = {
+                    "campaign_name": name,
+                    "total_waste": 0.0,
+                    "critical_count": 0,
+                    "high_count": 0,
+                    "findings_count": 0,
+                    "key_metrics": {},
+                }
+            entry = campaign_data[name]
+            entry["findings_count"] += 1
+            entry["total_waste"] += f.estimated_waste or 0.0
+            if f.severity == "critical":
+                entry["critical_count"] += 1
+            elif f.severity == "high":
+                entry["high_count"] += 1
+            # Capture first metric_value per category (most severe fires first due to sort order)
+            if f.category and f.metric_value is not None and f.category not in entry["key_metrics"]:
+                entry["key_metrics"][f.category] = round(f.metric_value, 2)
+
+        sorted_campaigns = sorted(
+            campaign_data.values(),
+            key=lambda x: (x["total_waste"], x["critical_count"], x["high_count"]),
+            reverse=True,
+        )
+
+        worst_performers = []
+        for c in sorted_campaigns[:3]:
+            entry: dict[str, Any] = {
+                "campaign_name": c["campaign_name"],
+                "estimated_waste": round(c["total_waste"], 2),
+                "findings": c["findings_count"],
+            }
+            if c["key_metrics"]:
+                entry["metrics"] = c["key_metrics"]
+            worst_performers.append(entry)
+
+        campaigns_with_findings = {
+            f.entity_name for f in run.findings if f.entity_type == "campaign"
+        }
+        clean_campaign_count = max(0, (run.campaign_count or 0) - len(campaigns_with_findings))
+
+        return {
+            "worst_performers": worst_performers,
+            "total_campaigns": run.campaign_count,
+            "campaigns_without_significant_findings": clean_campaign_count,
+        }
+
+    @classmethod
     def _build_structured_input(cls, run: AuditRun) -> dict[str, Any]:
         data_mode = "period_aggregate" if run.analysis_start == run.analysis_end else "daily_breakdown"
         limitations: list[str] = []
@@ -165,6 +223,7 @@ class AISummaryService:
                 "start": run.analysis_start.isoformat(),
                 "end": run.analysis_end.isoformat(),
             },
+            "campaign_performance": cls._build_campaign_digest(run),
             "findings": findings,
         }
 
