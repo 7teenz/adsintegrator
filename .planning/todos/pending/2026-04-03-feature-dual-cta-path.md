@@ -8,12 +8,21 @@ files:
 
 ## Problem
 
-Users land on the audit report with no clear next action. There's no conversion path — no way to differentiate between DIY users and users who want professional help.
+Users land on the audit report with no clear next action and no conversion path.
 
 ## Solution
 
-After the verdict line, before the findings list, show a prominent dual CTA banner:
-- **"Fix it yourself"** → expands AI hints inline per finding (triggers expand-all on findings list)
-- **"Book a strategy call"** → opens Calendly link (placeholder: `YOUR_CALENDLY_URL` until set)
+Full-width banner placed after the verdict line, before the findings list.
 
-This is the main monetization entry point. Keep it visually prominent — full-width banner, two equal-weight buttons.
+**Left button — "Fix it yourself"**:
+- On click: expand all findings in the findings list (set all to open state)
+- Label: "Fix it yourself" with a chevron-down icon
+
+**Right button — "Book a strategy call"**:
+- `href="https://calendly.com/tilabov17"` target `_blank`
+- Label: "Book a strategy call" with a calendar icon
+- Style: brand blue `#2563eb` background, white text (primary CTA)
+
+Both buttons equal width, side by side. On mobile: stack vertically with "Book a call" on top.
+
+**Coordinate with**: expandable findings todo — the "Fix it yourself" button needs access to the expand-all trigger.

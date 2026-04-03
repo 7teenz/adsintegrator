@@ -4,18 +4,25 @@ title: Add lead capture contact form at bottom of audit report
 area: feature
 files:
   - frontend/src/app/dashboard/audits/page.tsx
+  - frontend/src/components/dashboard/lead-capture-form.tsx
+  - backend/app/routes/audit.py
 ---
 
 ## Problem
 
-No lead capture mechanism on the audit report. Users who want help have no path to contact — lost conversion opportunity.
+No lead capture on the audit report. Users who want help have no path to contact — missed conversion opportunity.
 
 ## Solution
 
-Add a "Want us to fix this?" section at the bottom of the Audit Report page:
-- Fields: Name, Email, Message
-- Primary CTA: Calendly booking link (placeholder: `YOUR_CALENDLY_URL`)
-- Form submission: send email notification via existing SMTP config (`backend/app/services/email.py`)
-- New component + wire into audit report page
+New component `frontend/src/components/dashboard/lead-capture-form.tsx`:
+- Section heading: "Want us to fix this for you?"
+- Fields: Name, Email, Message (textarea)
+- Primary CTA button: "Book a Free Strategy Call" → links to `https://calendly.com/tilabov17`
+- Secondary: form submission sends email via backend
 
-Keep it simple — not a full CRM, just name/email/message + Calendly.
+**Backend**: add `POST /api/audit/contact` endpoint in `audit.py`:
+- Accepts `{name, email, message}`
+- Sends email via existing `backend/app/services/email.py` (SMTP already configured)
+- No DB storage needed — just fire-and-forget email to the account owner
+
+**Placement**: bottom of Overview tab in audit report, below findings list.
